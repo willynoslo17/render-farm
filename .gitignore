@@ -9,3 +9,5 @@ out/
 *.pem
 *.key
 __pycache__/
+remotion/out.mp4
+remotion/props.json
