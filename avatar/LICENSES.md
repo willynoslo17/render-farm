@@ -34,3 +34,26 @@ Not legal advice. "Commercial" = may the generated videos be monetized.
 | COEIROINK — not installed | proprietary freeware (closed source, no pinned Linux build) | per-character terms | n/a | https://coeiroink.com |
 
 `commercial` (default `true`) in avatar.yml: allowed = sadtalker, latentsync, longcat, aniportrait; wav2lip / liveportrait / echomimic are refused and replaced by sadtalker; codeformer is skipped. Set `"commercial":"false"` only for private/non-monetized tests.
+
+## Use-case reading (2026-10-12): (a) educational posts on ML Internasjonal Handel page, (b) personal brand, (c) paid ads, (d) selling videos / client work
+Not legal advice. "Output" = generated video/audio. Note: (a)-(c) by a business are still commercial under CC-NC's definition ("primarily intended for or directed towards commercial advantage"); no non-commercial license below carves out business education/promotion.
+
+| Model | Decisive text (short quote) | Says about outputs? | a | b | c | d | URL |
+|---|---|---|---|---|---|---|---|
+| SadTalker | "updated to Apache 2.0, and we've removed the non-commercial restriction" | Apache: nothing on outputs. Caveat: downloaded BFM/Wav2Lip/facexlib parts keep own (research) terms | Yes* | Yes* | Yes* | Yes* | https://github.com/OpenTalker/SadTalker |
+| LatentSync | weights `license: openrail++`; OpenRAIL §6 "Licensor claims no rights in the Output You generate" + Attachment A use restrictions | Outputs yours, but no use may violate Att. A (no defamation, harmful false info, etc.) | Yes | Yes | Yes | Yes | https://huggingface.co/ByteDance/LatentSync-1.5 |
+| LongCat-Video-Avatar 1.5 | `license: mit` (code + weights) | Silent (MIT = any use) | Yes | Yes | Yes | Yes | https://huggingface.co/meituan-longcat/LongCat-Video-Avatar-1.5 |
+| AniPortrait | Apache-2.0 code+weights; base SD1.5 CreativeML OpenRAIL-M: §5 use-based restrictions (Att. A), §6 "claims no rights in the Output" | Outputs yours; Att. A applies (no harmful false info, no defamation, no medical advice, etc.) | Yes | Yes | Yes | Yes | https://github.com/Zejun-Yang/AniPortrait · https://huggingface.co/spaces/CompVis/stable-diffusion-license |
+| MuseTalk | "The trained model are available for any purpose, even commercially." (deps whisper/sd-vae/dwpose/S3FD keep own licenses) | Silent | Yes | Yes | Yes | Yes | https://github.com/TMElyralab/MuseTalk |
+| EchoMimic V2 | code Apache-2.0; README "This project is intended for academic research"; HF weights: no license | Silent | Unclear→No | Unclear→No | No | No | https://github.com/antgroup/echomimic_v2 |
+| LivePortrait + InsightFace | LivePortrait MIT; InsightFace: "The pretrained models provided with this library are for non-commercial research only" | InsightFace silent on outputs; "non-commercial" undefined | No | No | No | No | https://github.com/KwaiVGI/LivePortrait · https://github.com/deepinsight/insightface/tree/master/python-package |
+| Wav2Lip | "All results from this open-source code ... should only be used for research/academic/personal purposes only ... any form of commercial use is strictly prohibited" | **Explicitly restricts results (outputs)**; "personal" undefined | No | Gray (personal, but brand = commercial) → No | No | No | https://github.com/Rudrabha/Wav2Lip |
+| CodeFormer (S-Lab 1.0) | "Redistribution and use for non-commercial purpose ... are permitted"; commercial "please contact the contributor(s)" | Silent on outputs; "non-commercial" undefined | No | No | No | No | https://github.com/sczhou/CodeFormer/blob/master/LICENSE |
+| Hallo / Hallo2 | `license: mit`; but needs InsightFace (non-commercial) and Hallo2 hi-res uses CodeFormer: "comply with the S-Lab License 1.0" | Silent | No | No | No | No | https://github.com/fudan-generative-vision/hallo2 |
+| Sonic | CC BY-NC-SA 4.0: "NonCommercial means not primarily intended for or directed towards commercial advantage or monetary compensation"; README "our license is non-commercial" | Outputs made with NC material that are adaptations stay NC | No | No | No | No | https://github.com/jixiaozhong/Sonic/blob/main/LICENSE |
+| V-Express | "The code ... for both academic and commercial usage. However ... models ... are for non-commercial research purposes" | "Users are granted the freedom to create videos" — but checkpoints research-only | No | No | No | No | https://github.com/tencent-ailab/V-Express |
+| MEMO | HF `license: apache-2.0`, but README "only open-sourced a preview model for research purposes"; "users may claim ownership of content generated" | Outputs owned by user, model marked research | No (conservative) | No | No | No | https://github.com/memoavatar/memo |
+| VOICEVOX ずんだもん/四国めたん | "商用、非商用ともにご利用いただけます" + credit required ("VOICEVOX:ずんだもん"); banned: political/religious, fake/misleading, 情報商材 | Applies to the audio | Yes+credit | Yes+credit | Yes+credit (no credit = ¥400k/char) | Yes+credit | https://zunko.jp/con_ongen_kiyaku.html |
+| Piper es_MX-claude-high | Model card: dataset "License: apache-2.0" (via HirCoir/Piper-TTS-Spanish) | Silent; speaker identity/consent of "claude" not documented | Yes (low confidence) | Yes (low) | Yes (low) | Yes (low) | https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/claude/high |
+
+\* SadTalker: safest with its research-licensed sub-models replaced; current workflow allows it under commercial=true.
