@@ -26,7 +26,7 @@ jobs:
       - name: Validate + download inputs (Cloudinary https only)
         run: |
           set -euo pipefail
-          case "$JOB" in raw2jpg|panorama|office2pdf|marp|slidev|mux|upscale|interpolate|bg_remove|resize) ;; *) echo "Invalid job"; exit 1;; esac
+          case "$JOB" in raw2jpg|panorama|office2pdf|marp|slidev|mux|upscale|interpolate|bg_remove|resize|toonz_render) ;; *) echo "Invalid job"; exit 1;; esac
           case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
           case "$SCALE" in 2|3|4) ;; *) echo "scale must be 2|3|4"; exit 1;; esac
           case "$SIZE" in *[!0-9]*|"") echo "size must be digits"; exit 1;; esac; [ "$SIZE" -le 8000 ]
@@ -41,7 +41,7 @@ jobs:
           echo "$INPUTS_JSON" | jq -r '.[]' | while IFS= read -r U; do
             [[ "$U" =~ ^https://res\.cloudinary\.com/yiq9yzmu/[A-Za-z0-9/_.,-]+\.([A-Za-z0-9]{2,5})$ ]] || { echo "Input not an allowed Cloudinary URL"; exit 1; }
             EXT=$(echo "${BASH_REMATCH[1]}" | tr 'A-Z' 'a-z')
-            case "$EXT" in jpg|jpeg|png|webp|tif|tiff|dng|cr2|cr3|nef|arw|raf|orf|rw2|mp4|mov|mkv|webm|wav|mp3|m4a|aac|srt|md|pptx|odp|ppt|docx|odt|css) ;; *) echo "extension not allowed"; exit 1;; esac
+            case "$EXT" in jpg|jpeg|png|webp|tif|tiff|dng|cr2|cr3|nef|arw|raf|orf|rw2|mp4|mov|mkv|webm|wav|mp3|m4a|aac|srt|md|pptx|odp|ppt|docx|odt|css|zip) ;; *) echo "extension not allowed"; exit 1;; esac
             i=$((i+1)); curl -fsSL --proto '=https' --max-time 180 --max-filesize 524288000 -o "in/$(printf %03d $i).$EXT" "$U"
           done
           ls -la in
@@ -58,6 +58,12 @@ jobs:
             resize) sudo apt-get install -y -qq imagemagick webp ;;
             bg_remove) pip install -q "rembg[cpu,cli]==2.0.85" ;;
             marp|slidev) sudo apt-get install -y -qq fonts-dejavu-core ;;
+            toonz_render)  # OpenToonz via Flathub pinned to commit (desktop/flatpak.lock)
+              sudo apt-get install -y -qq flatpak xvfb unzip
+              C=$(awk '$1=="io.github.OpenToonz"{print $2}' desktop/flatpak.lock)
+              sudo flatpak remote-add --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+              sudo flatpak install -y --noninteractive flathub io.github.OpenToonz
+              sudo flatpak update -y --noninteractive --commit="$C" io.github.OpenToonz ;;
           esac
           dpkg -l darktable hugin-tools libreoffice-impress mkvtoolnix imagemagick 2>/dev/null | awk '/^ii/{print $2, $3}' || true
           case "$JOB" in
@@ -106,6 +112,11 @@ jobs:
             bg_remove)
               M=$MODEL; [ "$M" = isnet ] && M=isnet-general-use
               for f in in/*; do rembg i -m "$M" "$f" "out/$(basename "${f%.*}")_nobg.png"; done ;;
+            toonz_render)  # input: one .zip with a self-contained OpenToonz project (scene .tnz + assets)
+              Z=$(ls in/*.zip | head -1); mkdir -p proj; unzip -q "$Z" -d proj
+              find proj -type l -delete; T=$(find proj -name '*.tnz' | head -1); [ -n "$T" ] || { echo "no .tnz in zip"; exit 1; }
+              F=${OUT_FMT:-mp4}
+              QT_QPA_PLATFORM=offscreen xvfb-run -a flatpak run --command=tcomposer --filesystem="$PWD" io.github.OpenToonz "$PWD/$T" -o "$PWD/out/toonz.$F" ;;
             resize)
               F=${OUT_FMT:-jpg}; for f in in/*; do magick "$f" -auto-orient -strip -resize "${SIZE}x${SIZE}>" -quality 85 "out/$(basename "${f%.*}").$F"; done ;;
           esac

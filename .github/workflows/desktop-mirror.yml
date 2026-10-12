@@ -1,0 +1,38 @@
+name: desktop-mirror
+# Manual only. Mirrors pinned official desktop installers (desktop/apps.lock) into a GitHub Release after sha256 verification.
+on:
+  workflow_dispatch:
+    inputs:
+      tag: { description: "release tag", required: false, default: "desktop-apps-2026-10-12" }
+permissions:
+  contents: read
+jobs:
+  mirror:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write   # only this job, only to create the release
+    env:
+      TAG: ${{ inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download + verify
+        run: |
+          set -euo pipefail
+          case "$TAG" in desktop-apps-[0-9A-Za-z.-]*) ;; *) echo "bad tag"; exit 1;; esac
+          mkdir -p dl; : > dl/SHA256SUMS
+          grep -v '^#' desktop/apps.lock | while read -r app os sha url; do
+            case "$url" in https://github.com/*/releases/download/*|https://gitlab.com/azelpg/azpainter/-/archive/*) ;; *) echo "url not allowed: $url"; exit 1;; esac
+            f="dl/${app}-${os}-$(basename "$url")"
+            curl -fsSL --proto '=https' --retry 3 -o "$f" "$url"
+            echo "$sha  $f" | sha256sum -c - || { echo "MISMATCH $url"; exit 1; }
+            echo "$sha  $(basename "$f")" >> dl/SHA256SUMS
+          done
+          cp desktop/apps.lock dl/
+      - name: Create release
+        run: |
+          set -euo pipefail
+          NOTES="Unmodified official installers, sha256-verified against desktop/apps.lock. Sources: OpenToonz https://github.com/opentoonz/opentoonz (BSD-3), Pinta https://github.com/PintaProject/Pinta (MIT), VidCutter https://github.com/ozmartian/vidcutter (GPL-3.0), Olive https://github.com/olive-editor/olive (GPL-3.0), AFFiNE https://github.com/toeverything/AFFiNE (MIT client), AzPainter https://gitlab.com/azelpg/azpainter (GPL-3.0, source)."
+          gh release view "$TAG" >/dev/null 2>&1 && { echo "release exists; refusing to overwrite"; exit 1; }
+          gh release create "$TAG" dl/* --title "Desktop apps ($TAG)" --notes "$NOTES"

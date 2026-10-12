@@ -9,7 +9,7 @@ Rule of thumb: GPL/MPL/AGPL **applications** don't restrict what you produce wit
 | MKVToolNix 92.0 | GPL-2.0 — https://mkvtoolnix.download/doc/COPYING.txt | – | Yes | apt | `mux` |
 | AzPainter | GPL-3.0 — https://gitlab.com/azelpg/azpainter | – | Yes | flatpak | – (GUI) |
 | Marp CLI 4.5.1 | MIT — https://github.com/marp-team/marp-cli/blob/main/LICENSE | – | Yes | npm -g | `marp` |
-| OpenToonz 1.8.0 | Modified BSD-3 ("Some of code ... derived from thirdparty libraries") — https://github.com/opentoonz/opentoonz/blob/master/LICENSE.txt | – | Yes | flatpak | – (GUI) |
+| OpenToonz 1.8.0 (headless `toonz_render` via tcomposer) | Modified BSD-3 ("Some of code ... derived from thirdparty libraries") — https://github.com/opentoonz/opentoonz/blob/master/LICENSE.txt | – | Yes | flatpak | – (GUI) |
 | Imagine | Not verified: no GPL-2.0 "Imagine" converter found. meowtec/Imagine (now meowtec/imgo) has **no LICENSE** (all rights reserved) | – | Unclear → skipped | – | `resize` uses ImageMagick (ImageMagick License, Apache-2.0-style) instead |
 | OvenMediaEngine 0.21.0 | **AGPL-3.0** — https://github.com/OvenMediaLabs/OvenMediaEngine/blob/master/LICENSE ; use unmodified | – | Yes (streams are yours) | docker compose (Azure, not deployed) | – |
 | Real-ESRGAN (ncnn-vulkan 20220424) | BSD-3 — https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE ; ncnn port MIT | RealESRGAN_x4plus released under repo BSD-3; trained on DF2K (DIV2K/Flickr2K "academic research") + OST | Yes, with caveat (training-data terms) | /opt/media-tools/realesrgan | `upscale` |
@@ -28,3 +28,5 @@ Rule of thumb: GPL/MPL/AGPL **applications** don't restrict what you produce wit
 | VidCutter 6.0.5.1 | GPL-3.0 — https://github.com/ozmartian/vidcutter | – | Yes | flatpak | – (GUI) |
 
 Weights in CI are sha256-pinned in `media/weights.lock`; CLI versions pinned (marp 4.5.1, slidev 53.0.0, rembg 2.0.85); apt tools come from the pinned runner image `ubuntu-24.04`.
+
+GUI apps: pinned installers/scripts in `desktop/` (apps.lock sha256, flatpak.lock commits); mirror release via `desktop-mirror.yml`. Olive has no stable 0.2 release (nightly pinned by hash). AzPainter ships source only (Linux). No headless mode: Pinta, Olive, VidCutter, AFFiNE, AzPainter.
