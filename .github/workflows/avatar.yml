@@ -9,7 +9,9 @@ on:
       job_id: { description: "Job id", required: false }
       callback_url: { description: "Allowlisted callback URL", required: false }
       quality: { description: "normal | alta", required: false, default: "normal" }
-      engine: { description: "sadtalker | echomimic | latentsync", required: false, default: "sadtalker" }
+      engine: { description: "sadtalker | wav2lip | liveportrait | echomimic | latentsync", required: false, default: "sadtalker" }
+      base_engine: { description: "liveportrait only: audio-driven driver, wav2lip | sadtalker", required: false, default: "wav2lip" }
+      codeformer: { description: "true = CodeFormer face restore (edits the face; off by default)", required: false, default: "false" }
       video_url: { description: "latentsync only: https Cloudinary yiq9yzmu .mp4", required: false }
 permissions:
   contents: read
@@ -21,6 +23,11 @@ jobs:
     timeout-minutes: 120
     env:
       SADTALKER_COMMIT: cd4c0465ae0b54a6f85af57f5c65fec9fe23e7f8
+      WAV2LIP_COMMIT: bac9a81e63ecc153202353372e5724b83d9e6322
+      CODEFORMER_COMMIT: b33cc7d639d6545bfcccc7e0bc6ae51f24e79c2b
+      LIVEPORTRAIT_COMMIT: 9b294b3d0536135442ea73cb01e6cb3ca7029dd3
+      BASE_ENGINE: ${{ github.event.client_payload.base_engine || inputs.base_engine || 'wav2lip' }}
+      CODEFORMER: ${{ github.event.client_payload.codeformer || inputs.codeformer || 'false' }}
       AUDIO_URL: ${{ github.event.client_payload.audio_url || inputs.audio_url }}
       PHOTO_ID: ${{ github.event.client_payload.photo_id || inputs.photo_id }}
       QUALITY: ${{ github.event.client_payload.quality || inputs.quality || 'normal' }}
@@ -44,7 +51,9 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           ffmpeg -v error -y -i "in/src_audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
           file in/photo.jpg | grep -Eq 'JPEG|PNG|WebP' || { echo "Photo is not an image"; exit 1; }
-          case "$ENGINE" in sadtalker|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$ENGINE" in sadtalker|wav2lip|liveportrait|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$BASE_ENGINE" in sadtalker|wav2lip) ;; *) echo "Invalid base_engine"; exit 1;; esac
+          case "$CODEFORMER" in true|false) ;; *) echo "codeformer must be true|false"; exit 1;; esac
           if [ "$ENGINE" = latentsync ]; then
             case "$VIDEO_URL" in https://res.cloudinary.com/yiq9yzmu/*.mp4) ;; *) echo "video_url must be our Cloudinary .mp4"; exit 1;; esac
             curl -fsSL --max-time 120 --max-filesize 104857600 -o in/src_video.mp4 "$VIDEO_URL"
@@ -54,18 +63,47 @@ jobs:
         with: { python-version: "3.10" }
       - name: HF Space route (echomimic | latentsync)
         id: hf
-        if: ${{ env.ENGINE != 'sadtalker' }}
-        continue-on-error: true
+        if: ${{ env.ENGINE == 'echomimic' || env.ENGINE == 'latentsync' }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          pip install -q "gradio_client>=1.3"
+          set +e
+          pip install -q "gradio_client==1.3.0"
           SRC=in/photo.jpg; [ "$ENGINE" = latentsync ] && SRC=in/video.mp4
-          timeout 1500 python avatar/hf_space.py "$ENGINE" "$SRC" in/audio.wav raw.mp4 && echo "done=true" >> "$GITHUB_OUTPUT"
-      - name: SadTalker (CPU)
-        if: ${{ steps.hf.outputs.done != 'true' }}
+          timeout 1500 python avatar/hf_space.py "$ENGINE" "$SRC" in/audio.wav raw.mp4 2> hf_err.txt
+          rc=$?
+          if [ $rc -eq 0 ] && [ -s raw.mp4 ]; then echo "done=true" >> "$GITHUB_OUTPUT"; echo "engine_used=$ENGINE" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if [ $rc -eq 124 ]; then R="timeout after 1500s on HF Space"; else R="HF Space error (exit $rc): $(tail -c 300 hf_err.txt | tr '\n"' '  ')"; fi
+          rm -f raw.mp4
+          echo "::warning title=$ENGINE failed, falling back to SadTalker::$R"
+          echo "### $ENGINE failed -> SadTalker fallback: $R" >> "$GITHUB_STEP_SUMMARY"
+          echo "fallback_reason=$ENGINE: $R" >> "$GITHUB_OUTPUT"
+      - name: Wav2Lip (CPU, pinned + checksummed)
+        id: w2l
+        if: ${{ env.ENGINE == 'wav2lip' || (env.ENGINE == 'liveportrait' && env.BASE_ENGINE == 'wav2lip') }}
+        continue-on-error: true
         run: |
           set -euo pipefail
+          git clone -q https://github.com/Rudrabha/Wav2Lip.git w2l && git -C w2l checkout -q "$WAV2LIP_COMMIT"
+          bash avatar/fetch_weights.sh wav2lip w2l
+          python -m venv /tmp/w2l && . /tmp/w2l/bin/activate
+          pip install -q torch==2.1.2+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install -q "numpy==1.23.5" "librosa==0.9.2" "numba==0.58.1" "opencv-python-headless==4.8.1.78" "scipy==1.11.4" "tqdm==4.66.1"
+          cd w2l && mkdir -p temp
+          python inference.py --checkpoint_path checkpoints/wav2lip_gan.pth --face ../in/photo.jpg \
+            --audio ../in/audio.wav --outfile ../raw.mp4 --static True --nosmooth --wav2lip_batch_size 64
+          test -s ../raw.mp4
+      - name: Record Wav2Lip failure
+        id: w2lfail
+        if: ${{ steps.w2l.outcome == 'failure' }}
+        run: |
+          rm -f raw.mp4
+          echo "::warning title=wav2lip failed, falling back to SadTalker::see Wav2Lip step log"
+          echo "fallback_reason=wav2lip: step failed (see log)" >> "$GITHUB_OUTPUT"
+      - name: SadTalker (CPU; default engine and fallback)
+        run: |
+          set -euo pipefail
+          if [ -s raw.mp4 ]; then echo "raw.mp4 already produced; SadTalker not needed"; exit 0; fi
           git clone -q https://github.com/OpenTalker/SadTalker.git st
           git -C st checkout -q "$SADTALKER_COMMIT"
           cd st
@@ -75,6 +113,44 @@ jobs:
           python inference.py --driven_audio ../in/audio.wav --source_image ../in/photo.jpg \
             --result_dir ../st_out --still --preprocess full --size 256 --cpu
           cp "$(find ../st_out -name '*.mp4' | head -1)" ../raw.mp4
+      - name: LivePortrait (CPU; animates original photo driven by base engine output)
+        id: lp
+        if: ${{ env.ENGINE == 'liveportrait' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/KwaiVGI/LivePortrait.git lp && git -C lp checkout -q "$LIVEPORTRAIT_COMMIT"
+          bash avatar/fetch_weights.sh liveportrait lp
+          python -m venv /tmp/lp && . /tmp/lp/bin/activate
+          pip install -q torch==2.3.0+cpu torchvision==0.18.0+cpu --index-url https://download.pytorch.org/whl/cpu
+          grep -v '^gradio' lp/requirements_base.txt > /tmp/lp_req.txt
+          pip install -q -r /tmp/lp_req.txt onnxruntime==1.18.0
+          cd lp && python inference.py -s ../in/photo.jpg -d ../raw.mp4 -o ../lp_out --flag_force_cpu
+          OUT=$(find ../lp_out -name '*.mp4' ! -name '*concat*' | head -1); test -s "$OUT"
+          ffmpeg -v error -y -i "$OUT" -i ../in/audio.wav -map 0:v -map 1:a -shortest -c:v libx264 -pix_fmt yuv420p ../lp.mp4
+          mv ../lp.mp4 ../raw.mp4
+      - name: Record LivePortrait failure
+        id: lpfail
+        if: ${{ steps.lp.outcome == 'failure' }}
+        run: |
+          echo "::warning title=liveportrait failed::delivering base engine ($BASE_ENGINE) video instead"
+          echo "fallback_reason=liveportrait: step failed, delivered $BASE_ENGINE output" >> "$GITHUB_OUTPUT"
+      - name: CodeFormer face restore (optional, CPU)
+        id: cf
+        if: ${{ env.CODEFORMER == 'true' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/sczhou/CodeFormer.git cf && git -C cf checkout -q "$CODEFORMER_COMMIT"
+          bash avatar/fetch_weights.sh codeformer cf
+          python -m venv /tmp/cf && . /tmp/cf/bin/activate
+          pip install -q torch==2.1.2+cpu torchvision==0.16.2+cpu --index-url https://download.pytorch.org/whl/cpu
+          pip install -q -r cf/requirements.txt ffmpeg-python==0.2.0
+          cd cf && python basicsr/setup.py -q develop
+          python inference_codeformer.py -w 0.7 -s 1 --input_path ../raw.mp4 --only_center_face
+          OUT=$(find results -name '*.mp4' | head -1); test -s "$OUT"
+          ffmpeg -v error -y -i "$OUT" -i ../raw.mp4 -map 0:v -map 1:a? -shortest -c:v libx264 -pix_fmt yuv420p ../cf.mp4
+          mv ../cf.mp4 ../raw.mp4
       - name: Add "Generado con IA" label
         run: |
           ffmpeg -v error -y -i raw.mp4 -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='Generado con IA':fontcolor=white:fontsize=h/22:box=1:boxcolor=black@0.5:boxborderw=8:x=w-tw-16:y=h-th-16" \
@@ -93,10 +169,13 @@ jobs:
           CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
           OUT_URL: ${{ steps.up.outputs.url }}
+          FALLBACK: ${{ steps.hf.outputs.fallback_reason || steps.w2lfail.outputs.fallback_reason || steps.lpfail.outputs.fallback_reason }}
+          CF_FAILED: ${{ steps.cf.outcome == 'failure' }}
         run: |
           case "$CB_URL" in
             https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
             *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
           esac
-          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" '{job:$job,url:$url}' | \
+          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" --arg engine "$ENGINE" --arg fb "$FALLBACK" --arg cf "$CF_FAILED" \
+            '{job:$job,url:$url,engine_requested:$engine,fallback_reason:$fb,codeformer_failed:($cf=="true")}' | \
             curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
