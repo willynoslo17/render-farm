@@ -46,7 +46,18 @@ case "$ENGINE" in
     python generate_video.py --ckpt_dir models/SoulX-FlashTalk-14B --wav2vec_dir models/chinese-wav2vec2-base \
       --input_prompt "A person is talking. Only the foreground characters are moving, the background remains static." \
       --cond_image "$SRC" --audio_path "$AUDIO" --audio_encode_mode stream --save_file out_sh/out.mp4 ;;
-  latentsync16)  # video lip-sync, LatentSync 1.6 (512px)
+  latentsync16)  # video lip-sync, LatentSync 1.6 (512px); sd-vae sha-pinned (weights.lock)
+    mkdir -p checkpoints/sd-vae
+    if [ ! -f checkpoints/sd-vae/diffusion_pytorch_model.bin ]; then
+      # Prefer weights already fetched by fetch_weights.sh into WEIGHTS_DIR
+      WROOT="${WEIGHTS_DIR:-$PWD/../weights}"
+      if [ -f "$WROOT/latentsync16/checkpoints/sd-vae/diffusion_pytorch_model.bin" ]; then
+        cp -a "$WROOT/latentsync16/checkpoints/sd-vae/." checkpoints/sd-vae/
+      else
+        echo "Missing pinned sd-vae; run avatar/fetch_weights.sh latentsync16 first"; exit 1
+      fi
+    fi
+    export DIFFUSERS_OFFLINE=1 HF_HUB_OFFLINE=1
     python -m scripts.inference --unet_config_path configs/unet/stage2_512.yaml --inference_ckpt_path checkpoints/latentsync_unet.pt \
       --inference_steps 20 --guidance_scale 1.5 --video_path "$SRC" --audio_path "$AUDIO" --video_out_path out_sh/out.mp4 ;;
 esac
