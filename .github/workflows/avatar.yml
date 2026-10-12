@@ -9,7 +9,7 @@ on:
       job_id: { description: "Job id", required: false }
       callback_url: { description: "Allowlisted callback URL", required: false }
       quality: { description: "normal | alta", required: false, default: "normal" }
-      engine: { description: "sadtalker | wav2lip | liveportrait | echomimic | latentsync", required: false, default: "sadtalker" }
+      engine: { description: "sadtalker | longcat | aniportrait | latentsync | wav2lip | liveportrait | echomimic", required: false, default: "sadtalker" }
       base_engine: { description: "liveportrait only: audio-driven driver, wav2lip | sadtalker", required: false, default: "wav2lip" }
       commercial: { description: "true = only engines licensed for commercial use (see avatar/LICENSES.md)", required: false, default: "true" }
       codeformer: { description: "true = CodeFormer face restore (edits the face; off by default)", required: false, default: "false" }
@@ -53,7 +53,7 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           ffmpeg -v error -y -i "in/src_audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
           file in/photo.jpg | grep -Eq 'JPEG|PNG|WebP' || { echo "Photo is not an image"; exit 1; }
-          case "$ENGINE" in sadtalker|wav2lip|liveportrait|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$ENGINE" in sadtalker|longcat|aniportrait|wav2lip|liveportrait|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
           case "$BASE_ENGINE" in sadtalker|wav2lip) ;; *) echo "Invalid base_engine"; exit 1;; esac
           case "$CODEFORMER" in true|false) ;; *) echo "codeformer must be true|false"; exit 1;; esac
           case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
@@ -76,14 +76,17 @@ jobs:
           fi
       - uses: actions/setup-python@v5
         with: { python-version: "3.10" }
-      - name: HF Space route (echomimic | latentsync)
+      - name: HF Space route (echomimic | latentsync | longcat | aniportrait)
         id: hf
-        if: ${{ env.ENGINE == 'echomimic' || env.ENGINE == 'latentsync' }}
+        if: ${{ env.ENGINE == 'echomimic' || env.ENGINE == 'latentsync' || env.ENGINE == 'longcat' || env.ENGINE == 'aniportrait' }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set +e
-          pip install -q "gradio_client==1.3.0"
+          case "$ENGINE" in
+            longcat|aniportrait) pip install -q "gradio_client==2.7.2" ;;  # Gradio 6 Spaces need client 2.x
+            *) pip install -q "gradio_client==1.3.0" ;;
+          esac
           SRC=in/photo.jpg; [ "$ENGINE" = latentsync ] && SRC=in/video.mp4
           timeout 1500 python avatar/hf_space.py "$ENGINE" "$SRC" in/audio.wav raw.mp4 2> hf_err.txt
           rc=$?

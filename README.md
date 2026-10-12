@@ -27,9 +27,12 @@ Body (Make PRINCIPAL HTTP module, same headers as above):
 | liveportrait | GitHub CPU | photo + audio | `base_engine` (wav2lip\|sadtalker) makes the audio-driven video, then LivePortrait re-animates the original photo with it; on failure the base video is delivered |
 | echomimic | HF Space fffiloni/echomimic-v2 | photo + audio | Space is on CPU, often times out -> SadTalker |
 | latentsync | HF Space fffiloni/LatentSync (ZeroGPU) | `video_url` (our Cloudinary .mp4) + audio | |
+| longcat | HF Space meituan-longcat/LongCat-Video-Avatar-1.5-Demo (official, ZeroGPU) | photo + audio | LongCat-Video-Avatar 1.5, 480p, 5 s per call (Space limit); MIT |
+| aniportrait | HF Space ZJYang/AniPortrait_official (official, ZeroGPU) | photo + audio | 512px, `AP_FRAMES` default 150; Apache-2.0 |
 
-`"commercial"` (default `"true"`): only commercially-licensed engines run (sadtalker, latentsync); wav2lip/liveportrait/echomimic fall back to sadtalker and codeformer is skipped. See avatar/LICENSES.md.
+`"commercial"` (default `"true"`): only commercially-licensed engines run (sadtalker, latentsync, longcat, aniportrait); wav2lip/liveportrait/echomimic fall back to sadtalker and codeformer is skipped. See avatar/LICENSES.md.
 Optional `"codeformer":"true"`: CodeFormer face restoration (CPU, slow). It modifies the face, so it is OFF by default.
 Callback JSON: `{job,url,engine,commercial,fallback_reason,codeformer_failed}`. `fallback_reason` is non-empty when the requested engine failed/timed out (also shown as a warning + run summary).
 All code is pinned to commits; all model weights are pinned to immutable revisions and verified with sha256 (`avatar/weights.lock`, `avatar/fetch_weights.sh`).
 MuseTalk: not installed — official Space is in RUNTIME_ERROR and self-hosting needs mmcv/mmpose + GPU (not feasible on free CPU).
+Not installed (see avatar/LICENSES.md): LiveAvatar, SoulX-FlashTalk, EchoMimicV3-Flash, KeySync — commercial-OK but need a GPU (14B / 24GB+) and no working official Space (KeySync Space RUNTIME_ERROR); Hallo/Hallo2 (InsightFace non-commercial, Space paused), Sonic (CC BY-NC-SA), V-Express (non-commercial weights) — no free route and not sellable; daVinci-MagiHuman — code repo has no license and its Space is text-prompt only (no audio input); Sync 1.9 — paid sync.so API; MegaPortraits — no official code.
