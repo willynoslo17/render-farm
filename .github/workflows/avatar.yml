@@ -38,9 +38,9 @@ jobs:
           case "$EXT" in wav|mp3) ;; *) echo "audio must be .wav or .mp3"; exit 1;; esac
           mkdir -p in
           curl -fsSL --max-time 60 --max-filesize 26214400 -o in/photo.jpg "$PHOTO_URL"
-          curl -fsSL --max-time 60 --max-filesize 26214400 -o "in/audio.$EXT" "$AUDIO_URL"
+          curl -fsSL --max-time 60 --max-filesize 26214400 -o "in/src_audio.$EXT" "$AUDIO_URL"
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
-          ffmpeg -v error -y -i "in/audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
+          ffmpeg -v error -y -i "in/src_audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
           file in/photo.jpg | grep -Eq 'JPEG|PNG|WebP' || { echo "Photo is not an image"; exit 1; }
       - uses: actions/setup-python@v5
         with: { python-version: "3.10" }
