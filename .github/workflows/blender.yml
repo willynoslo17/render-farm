@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: blender-${{ github.run_id }}
 jobs:
   render:
     runs-on: ubuntu-latest
@@ -15,30 +17,43 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Blender (headless)
         run: |
-          sudo apt-get update && sudo apt-get install -y libxi6 libxxf86vm1 libxrender1 libgl1 libxkbcommon0 libsm6
+          sudo apt-get update && sudo apt-get install -y libxi6 libxxf86vm1 libxrender1 libgl1 libxkbcommon0 libsm6 ffmpeg
           wget -q https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz
-          tar xf blender-*.tar.xz && mv blender-${BLENDER_VERSION}-linux-x64 blender
-      - name: Render (Cycles CPU / EEVEE)
+          tar xf blender-*.tar.xz && mv blender-${BLENDER_VERSION}-linux-x64 blender-bin
+      - name: Render
         env:
-          SCENE: ${{ github.event.client_payload.scene || 'blender/scene.blend' }}
+          SCENE: ${{ github.event.client_payload.scene }}
           START: ${{ github.event.client_payload.start || 1 }}
-          END: ${{ github.event.client_payload.end || 120 }}
+          END: ${{ github.event.client_payload.end || 60 }}
         run: |
+          set -e
+          case "$START$END" in *[!0-9]*) echo "start/end must be integers"; exit 1;; esac
+          if [ -z "$SCENE" ] || [ ! -f "$SCENE" ]; then
+            echo "No scene file given; generating default scene."
+            ./blender-bin/blender -b --python-expr "exec(open('blender/make_scene.py').read()); import bpy; bpy.ops.wm.save_as_mainfile(filepath='/tmp/scene.blend')"
+            SCENE=/tmp/scene.blend
+          fi
           mkdir -p out
-          ./blender/blender -b "$SCENE" -P blender/render.py -s "$START" -e "$END" -o //../out/frame_#### -F PNG -a
-          ffmpeg -y -framerate 30 -i out/frame_%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+          ./blender-bin/blender -b "$SCENE" -P blender/render.py -s "$START" -e "$END" -o "$GITHUB_WORKSPACE/out/frame_####" -F PNG -a
+          ffmpeg -y -framerate 30 -start_number "$START" -i out/frame_%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
       - name: Upload to Cloudinary (unsigned)
         id: up
         run: |
-          URL=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
-            -F upload_preset=ml_unsigned -F file=@out.mp4 | jq -r .secure_url)
-          echo "url=$URL" >> $GITHUB_OUTPUT; echo "$URL"
-      - name: Callback
+          RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F file=@out.mp4)
+          URL=$(echo "$RESP" | jq -r '.secure_url // empty')
+          if [ -z "$URL" ]; then echo "Upload failed: $(echo "$RESP" | jq -c '.error // .')"; exit 1; fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"; echo "secure_url=$URL"
+      - name: Callback (allowlisted URLs only)
         if: ${{ github.event.client_payload.callback_url != '' }}
         env:
           CB_URL: ${{ github.event.client_payload.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id }}
           OUT_URL: ${{ steps.up.outputs.url }}
         run: |
+          case "$CB_URL" in
+            https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
+            *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
+          esac
           jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" '{job:$job,url:$url}' | \
-            curl -s -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-

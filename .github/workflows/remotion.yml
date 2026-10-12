@@ -5,6 +5,8 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: remotion-${{ github.run_id }}
 jobs:
   render:
     runs-on: ubuntu-latest
@@ -15,27 +17,36 @@ jobs:
         with: { node-version: 20 }
       - name: Install
         working-directory: remotion
-        run: npm ci || npm install
+        run: npm ci
       - name: Render
         working-directory: remotion
         env:
           PROPS: ${{ toJson(github.event.client_payload.props) }}
-          COMP: ${{ github.event.client_payload.composition || 'Main' }}
         run: |
+          if [ -z "$PROPS" ] || [ "$PROPS" = "null" ]; then
+            PROPS='{"title":"Render test","subtitle":"Remotion on GitHub Actions","imageUrl":"","durationInFrames":90}'
+          fi
+          echo "$PROPS" | jq -e 'type=="object"' > props.json.check
           echo "$PROPS" > props.json
-          npx remotion render src/index.ts "$COMP" out.mp4 --props=props.json
+          npx remotion render src/index.ts Promo out.mp4 --props=props.json
       - name: Upload to Cloudinary (unsigned)
         id: up
         run: |
-          URL=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
-            -F upload_preset=ml_unsigned -F file=@remotion/out.mp4 | jq -r .secure_url)
-          echo "url=$URL" >> $GITHUB_OUTPUT; echo "$URL"
-      - name: Callback
+          RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F file=@remotion/out.mp4)
+          URL=$(echo "$RESP" | jq -r '.secure_url // empty')
+          if [ -z "$URL" ]; then echo "Upload failed: $(echo "$RESP" | jq -c '.error // .')"; exit 1; fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"; echo "secure_url=$URL"
+      - name: Callback (allowlisted URLs only)
         if: ${{ github.event.client_payload.callback_url != '' }}
         env:
           CB_URL: ${{ github.event.client_payload.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id }}
           OUT_URL: ${{ steps.up.outputs.url }}
         run: |
+          case "$CB_URL" in
+            https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
+            *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
+          esac
           jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" '{job:$job,url:$url}' | \
-            curl -s -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
