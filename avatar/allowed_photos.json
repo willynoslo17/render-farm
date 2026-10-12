@@ -1,0 +1,4 @@
+{
+  "_comment": "Allowlist of APPROVED photos for avatar renders. Map photo_id -> Cloudinary https URL (res.cloudinary.com/yiq9yzmu/...). Only Willed-approved photos go here. Any photo_id not listed is refused. Example: \"camisa-blanca\": \"https://res.cloudinary.com/yiq9yzmu/image/upload/v123/ml/avatar/camisa-blanca.jpg\"",
+  "photos": {}
+}
