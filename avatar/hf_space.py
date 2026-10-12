@@ -19,7 +19,11 @@ if mode not in ALLOWED:
 space = os.environ.get(mode.upper() + "_SPACE") or DEFAULT[mode]
 if space not in ALLOWED[mode]:
     sys.exit(f"Space {space} not in allowlist")
-client = Client(space, hf_token=os.environ.get("HF_TOKEN") or None, verbose=False)
+tok = os.environ.get("HF_TOKEN") or None
+try:
+    client = Client(space, token=tok, verbose=False)
+except TypeError:
+    client = Client(space, hf_token=tok, verbose=False)
 if mode == "echomimic":
     res = client.predict(handle_file(src), handle_file(audio), "assets/halfbody_demo/pose/01", "Showcase",
                          768, 768, int(os.environ.get("EM_FRAMES", "150")), 20, 16000, 2.5, 24, 12, 3, False, -1,
