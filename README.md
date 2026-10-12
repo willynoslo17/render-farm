@@ -30,7 +30,7 @@ Body (Make PRINCIPAL HTTP module, same headers as above):
 | longcat | HF Space meituan-longcat/LongCat-Video-Avatar-1.5-Demo (official, ZeroGPU) | photo + audio | LongCat-Video-Avatar 1.5, 480p, 5 s per call (Space limit); MIT |
 | aniportrait | HF Space ZJYang/AniPortrait_official (official, ZeroGPU) | photo + audio | 512px, `AP_FRAMES` default 150; Apache-2.0 |
 
-`"commercial"` (default `"true"`): only commercially-licensed engines run (sadtalker, latentsync, longcat, aniportrait); wav2lip/liveportrait/echomimic fall back to sadtalker and codeformer is skipped. See avatar/LICENSES.md.
+`"commercial"` (default `"true"`): only commercially-licensed engines run (sadtalker, latentsync, longcat, aniportrait, liveportrait-MediaPipe); wav2lip/echomimic fall back to sadtalker, codeformer is skipped, liveportrait uses MediaPipe instead of InsightFace and sadtalker as driver. See avatar/LICENSES.md.
 Optional `"codeformer":"true"`: CodeFormer face restoration (CPU, slow). It modifies the face, so it is OFF by default.
 Callback JSON: `{job,url,engine,commercial,fallback_reason,codeformer_failed}`. `fallback_reason` is non-empty when the requested engine failed/timed out (also shown as a warning + run summary).
 All code is pinned to commits; all model weights are pinned to immutable revisions and verified with sha256 (`avatar/weights.lock`, `avatar/fetch_weights.sh`).
@@ -41,3 +41,10 @@ Not installed (see avatar/LICENSES.md): LiveAvatar, SoulX-FlashTalk, EchoMimicV3
 {"event_type":"voice","client_payload":{"text":"こんにちは","voice":"zundamon","job_id":"126","callback_url":"https://hook.eu1.make.com/..."}}
 VOICEVOX engine 0.25.2 (Docker, pinned digest, CPU). Voices: zundamon, metan only (no cloning). Commercial OK **only with credit** in the video description (`credit_required` in callback). Output .wav on Cloudinary ml/voice.
 Not installed: MEMO (research-only, needs GPU, Space RUNTIME_ERROR), FaceFormer + Perceptual 3D Talking Head (VOCASET non-commercial + gated templates), DIRFA (no public code), COEIROINK (closed freeware), "Talking Face Generation with Multilingual TTS" (no weights), SEA-LION (LLM, not an avatar/voice engine).
+
+## GPU-only engines (installed, waiting for a GPU) — `event_type: "avatar-gpu"`
+musetalk (MuseTalk 1.5), echomimicv3 (EchoMimicV3-Flash), keysync, liveavatar, flashtalk (SoulX-FlashTalk), latentsync16 (LatentSync 1.6).
+Code pinned, weights sha256-locked (`avatar/weights.lock`), runner script `avatar/selfhost/run.sh`, workflow `avatar-gpu.yml` (runs-on `[self-hosted, gpu]`, e.g. an Azure GPU VM; it stays queued until one is registered).
+Sent to the normal `avatar` workflow, these engines fall back to longcat (keysync+commercial -> sadtalker) with `fallback_reason` "needs a GPU".
+Warning: self-hosted runners on a public repo must be ephemeral/isolated; never register one on a machine with secrets.
+Not installed: Duix-Avatar (model license non-commercial without written authorization; needs NVIDIA GPU).

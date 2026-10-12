@@ -9,7 +9,7 @@ on:
       job_id: { description: "Job id", required: false }
       callback_url: { description: "Allowlisted callback URL", required: false }
       quality: { description: "normal | alta", required: false, default: "normal" }
-      engine: { description: "sadtalker | longcat | aniportrait | latentsync | wav2lip | liveportrait | echomimic", required: false, default: "sadtalker" }
+      engine: { description: "sadtalker | longcat | aniportrait | latentsync | liveportrait | wav2lip | echomimic | GPU-only (fall back here; use avatar-gpu): musetalk | echomimicv3 | keysync | liveavatar | flashtalk | latentsync16", required: false, default: "sadtalker" }
       base_engine: { description: "liveportrait only: audio-driven driver, wav2lip | sadtalker", required: false, default: "wav2lip" }
       commercial: { description: "true = only engines licensed for commercial use (see avatar/LICENSES.md)", required: false, default: "true" }
       codeformer: { description: "true = CodeFormer face restore (edits the face; off by default)", required: false, default: "false" }
@@ -53,12 +53,25 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
           ffmpeg -v error -y -i "in/src_audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
           file in/photo.jpg | grep -Eq 'JPEG|PNG|WebP' || { echo "Photo is not an image"; exit 1; }
-          case "$ENGINE" in sadtalker|longcat|aniportrait|wav2lip|liveportrait|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$ENGINE" in sadtalker|longcat|aniportrait|wav2lip|liveportrait|echomimic|latentsync|musetalk|echomimicv3|keysync|liveavatar|flashtalk|latentsync16) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$ENGINE" in musetalk|echomimicv3|keysync|liveavatar|flashtalk|latentsync16)
+            if [ "$ENGINE" = keysync ] && [ "$COMMERCIAL" = true ]; then FB=sadtalker; else FB=longcat; fi
+            R="$ENGINE needs a GPU (self-hosted route avatar/selfhost/run.sh via event_type avatar-gpu); no free GPU route today -> $FB"
+            echo "::warning title=needs GPU::$R"; echo "### $R" >> "$GITHUB_STEP_SUMMARY"
+            echo "GPU_FALLBACK=$R" >> "$GITHUB_ENV"; echo "ENGINE=$FB" >> "$GITHUB_ENV"; ENGINE=$FB;;
+          esac
           case "$BASE_ENGINE" in sadtalker|wav2lip) ;; *) echo "Invalid base_engine"; exit 1;; esac
           case "$CODEFORMER" in true|false) ;; *) echo "codeformer must be true|false"; exit 1;; esac
           case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
           if [ "$COMMERCIAL" = true ]; then
-            case "$ENGINE" in wav2lip|liveportrait|echomimic)
+            if [ "$ENGINE" = liveportrait ]; then
+              echo "LP_FACE=mediapipe" >> "$GITHUB_ENV"
+              if [ "$BASE_ENGINE" = wav2lip ]; then
+                echo "::warning title=license::liveportrait base_engine wav2lip is non-commercial; using sadtalker as driver"
+                echo "BASE_ENGINE=sadtalker" >> "$GITHUB_ENV"
+              fi
+            fi
+            case "$ENGINE" in wav2lip|echomimic)
               echo "::warning title=license::$ENGINE weights are not licensed for commercial use; using sadtalker (see avatar/LICENSES.md)"
               echo "### commercial=true: $ENGINE refused (license) -> sadtalker" >> "$GITHUB_STEP_SUMMARY"
               echo "LICENSE_FALLBACK=$ENGINE refused (non-commercial license) -> sadtalker" >> "$GITHUB_ENV"
@@ -138,12 +151,21 @@ jobs:
         run: |
           set -euo pipefail
           git clone -q https://github.com/KwaiVGI/LivePortrait.git lp && git -C lp checkout -q "$LIVEPORTRAIT_COMMIT"
-          bash avatar/fetch_weights.sh liveportrait lp
+          if [ "${LP_FACE:-insightface}" = mediapipe ]; then
+            WEIGHTS_EXCLUDE='/insightface/' bash avatar/fetch_weights.sh liveportrait lp   # no InsightFace weights (non-commercial)
+          else
+            bash avatar/fetch_weights.sh liveportrait lp
+          fi
           python -m venv /tmp/lp && . /tmp/lp/bin/activate
           pip install -q torch==2.3.0+cpu torchvision==0.18.0+cpu --index-url https://download.pytorch.org/whl/cpu
           grep -v '^gradio' lp/requirements_base.txt > /tmp/lp_req.txt
           pip install -q -r /tmp/lp_req.txt onnxruntime==1.18.0
-          cd lp && python inference.py -s ../in/photo.jpg -d ../raw.mp4 -o ../lp_out --flag_force_cpu
+          if [ "${LP_FACE:-insightface}" = mediapipe ]; then
+            pip install -q mediapipe==0.10.14
+            cd lp && python ../avatar/lp_mediapipe.py -s ../in/photo.jpg -d ../raw.mp4 -o ../lp_out --flag_force_cpu
+          else
+            cd lp && python inference.py -s ../in/photo.jpg -d ../raw.mp4 -o ../lp_out --flag_force_cpu
+          fi
           OUT=$(find ../lp_out -name '*.mp4' ! -name '*concat*' | head -1); test -s "$OUT"
           ffmpeg -v error -y -i "$OUT" -i ../in/audio.wav -map 0:v -map 1:a -shortest -c:v libx264 -pix_fmt yuv420p ../lp.mp4
           mv ../lp.mp4 ../raw.mp4
@@ -187,7 +209,7 @@ jobs:
           CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
           OUT_URL: ${{ steps.up.outputs.url }}
-          FALLBACK: ${{ env.LICENSE_FALLBACK || steps.hf.outputs.fallback_reason || steps.w2lfail.outputs.fallback_reason || steps.lpfail.outputs.fallback_reason }}
+          FALLBACK: ${{ env.GPU_FALLBACK || env.LICENSE_FALLBACK || steps.hf.outputs.fallback_reason || steps.w2lfail.outputs.fallback_reason || steps.lpfail.outputs.fallback_reason }}
           CF_FAILED: ${{ steps.cf.outcome == 'failure' }}
         run: |
           case "$CB_URL" in

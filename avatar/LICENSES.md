@@ -57,3 +57,19 @@ Not legal advice. "Output" = generated video/audio. Note: (a)-(c) by a business 
 | Piper es_MX-claude-high | Model card: dataset "License: apache-2.0" (via HirCoir/Piper-TTS-Spanish) | Silent; speaker identity/consent of "claude" not documented | Yes (low confidence) | Yes (low) | Yes (low) | Yes (low) | https://huggingface.co/rhasspy/piper-voices/tree/main/es/es_MX/claude/high |
 
 \* SadTalker: safest with its research-licensed sub-models replaced; current workflow allows it under commercial=true.
+
+## Update 2026-10-12 (b): Duix, LivePortrait-MediaPipe, daVinci recheck, LatentSync 1.6, GPU engines
+
+| Item | Code | Weights / terms | Commercial | Source |
+|---|---|---|---|---|
+| Duix-Avatar @1328feb (duix.com) — not installed | LICENSE "DUIX.COM COMMUNITY LICENSE": royalty-free, but §2 "greater than 1 thousand Monthly Active Users ... you must request a commercial license" (not 100k users / $10M as reported) | Model PDF "Duix.Avatar:0.0.7_sdk_slim Model Community License": "You may use this license for Non-Commercial Purposes"; §2.2 "for Commercial Use, you must register with the Licensor ... and obtain written authorization"; "Commercial Use" = "directly or indirectly operate, promote, or generate revenue" | **No** without written authorization. Also needs NVIDIA GPU + ~100 GB disk (Docker) | https://github.com/duixcom/Duix-Avatar/blob/1328feb5871448c8fa3d0e45b3bbc87e7c1d458a/LICENSE |
+| **LivePortrait + MediaPipe** (`liveportrait` when commercial=true) | MIT; `avatar/lp_mediapipe.py` swaps InsightFace for MediaPipe FaceMesh (Apache-2.0); LivePortrait landmark.onnx (MIT) refines | InsightFace det_10g / 2d106det **not downloaded** (WEIGHTS_EXCLUDE); driver forced to sadtalker (wav2lip is NC) | **Yes** (untested variant) | https://github.com/google-ai-edge/mediapipe/blob/master/LICENSE |
+| daVinci-MagiHuman (recheck) | still **no LICENSE file** (GAIR-NLP @209209b, SandAI-org @9eb51e3 unchanged) | HF GAIR/daVinci-MagiHuman Apache-2.0 | Unclear → No | official Space SII-GAIR/daVinci-MagiHuman takes image + text prompt only (generates its own audio); no free route accepts our audio |
+| LatentSync 1.6 | Apache-2.0 @a229c39 | HF ByteDance/LatentSync-1.6 @c42c7e6 openrail++ | Yes | Free Space fffiloni/LatentSync still loads v1.0 (`ByteDance/LatentSync`), can't be pinned to 1.6; 1.6 is pinned only on self-hosted route `latentsync16` (18 GB VRAM). Note: sd-vae is auto-downloaded by diffusers there (not sha-locked) |
+| MuseTalk 1.5 (`musetalk`, GPU) | MIT @0a89dec | MIT weights @2bcb936 + sd-vae-ft-mse (MIT), whisper-tiny (Apache), DWPose (Apache), resnet18 (BSD). **Caveat:** face-parse 79999_iter.pth (WTFPL mirror) trained on CelebAMask-HQ (non-commercial dataset) | Yes, with caveat (like SadTalker) | https://github.com/TMElyralab/MuseTalk |
+| EchoMimicV3-Flash (`echomimicv3`, GPU) | Apache-2.0 @7e89489 | flash-pro Apache-2.0 + Wan2.1-Fun-1.3B-InP (Apache-2.0) + chinese-wav2vec2-base (MIT) | Yes | https://huggingface.co/BadToBest/EchoMimicV3 |
+| KeySync (`keysync`, GPU) | Apache-2.0 @5e2503b | toninio19/keysync Apache-2.0, **but bundles** svd_no_emb (Stable Video Diffusion; Stability license) and a VSR model trained on LRS2/LRS3 (non-commercial datasets) | **Unclear → refused when commercial=true** | https://huggingface.co/toninio19/keysync |
+| LiveAvatar (`liveavatar`, GPU ≥48 GB) | Apache-2.0 @c3c47d0 | Live-Avatar LoRA Apache-2.0 + Wan2.2-S2V-14B Apache-2.0 | Yes | https://github.com/Alibaba-Quark/LiveAvatar |
+| SoulX-FlashTalk (`flashtalk`, GPU ~64-80 GB) | Apache-2.0 @2ba2e1e | FlashTalk-14B Apache-2.0 + chinese-wav2vec2-base MIT | Yes | https://github.com/Soul-AILab/SoulX-FlashTalk |
+
+commercial=true now: allowed = sadtalker, latentsync, longcat, aniportrait, liveportrait (MediaPipe variant, sadtalker driver), and GPU engines musetalk/echomimicv3/liveavatar/flashtalk/latentsync16; refused = wav2lip, echomimic, keysync, codeformer.

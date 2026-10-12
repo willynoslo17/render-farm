@@ -1,0 +1,71 @@
+name: avatar-gpu
+# Self-hosted GPU route for engines that cannot run on free CPU runners / free Spaces.
+# Waits for a registered self-hosted runner labelled "gpu" (e.g. Azure GPU VM). Dispatch: event_type "avatar-gpu".
+on:
+  repository_dispatch:
+    types: [avatar-gpu]
+  workflow_dispatch:
+    inputs:
+      engine: { description: "musetalk | echomimicv3 | keysync | liveavatar | flashtalk | latentsync16", required: true }
+      photo_id: { description: "ID from avatar/allowed_photos.json", required: true }
+      audio_url: { description: "https .wav/.mp3", required: true }
+      video_url: { description: "musetalk/keysync/latentsync16: https Cloudinary yiq9yzmu .mp4", required: false }
+      commercial: { description: "true = refuse engines not cleared for commercial use", required: false, default: "true" }
+      job_id: { description: "Job id", required: false }
+      callback_url: { description: "Allowlisted callback URL", required: false }
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: [self-hosted, gpu]
+    timeout-minutes: 180
+    env:
+      ENGINE: ${{ github.event.client_payload.engine || inputs.engine }}
+      PHOTO_ID: ${{ github.event.client_payload.photo_id || inputs.photo_id }}
+      AUDIO_URL: ${{ github.event.client_payload.audio_url || inputs.audio_url }}
+      VIDEO_URL: ${{ github.event.client_payload.video_url || inputs.video_url }}
+      COMMERCIAL: ${{ github.event.client_payload.commercial || inputs.commercial || 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs
+        run: |
+          set -euo pipefail
+          case "$ENGINE" in musetalk|echomimicv3|keysync|liveavatar|flashtalk|latentsync16) ;; *) echo "Invalid engine"; exit 1;; esac
+          case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
+          if [ "$COMMERCIAL" = true ] && [ "$ENGINE" = keysync ]; then echo "keysync not cleared for commercial use (see avatar/LICENSES.md)"; exit 1; fi
+          case "$PHOTO_ID" in ""|*[!A-Za-z0-9_-]*) echo "Invalid photo_id"; exit 1;; esac
+          PHOTO_URL=$(jq -r --arg id "$PHOTO_ID" '.photos[$id] // empty' avatar/allowed_photos.json)
+          case "$PHOTO_URL" in https://res.cloudinary.com/yiq9yzmu/*) ;; *) echo "photo_id not approved"; exit 1;; esac
+          case "$AUDIO_URL" in https://*) ;; *) echo "audio_url must be https"; exit 1;; esac
+          EXT=$(echo "${AUDIO_URL%%\?*}" | sed 's/.*\.//' | tr 'A-Z' 'a-z'); case "$EXT" in wav|mp3) ;; *) echo "audio must be wav/mp3"; exit 1;; esac
+          mkdir -p in
+          curl -fsSL --max-time 60 --max-filesize 26214400 -o in/photo.jpg "$PHOTO_URL"
+          curl -fsSL --max-time 60 --max-filesize 26214400 -o "in/src_audio.$EXT" "$AUDIO_URL"
+          ffmpeg -v error -y -i "in/src_audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
+          SRC=in/photo.jpg
+          case "$ENGINE" in musetalk|keysync|latentsync16)
+            case "$VIDEO_URL" in https://res.cloudinary.com/yiq9yzmu/*.mp4) ;; *) echo "video_url must be our Cloudinary .mp4"; exit 1;; esac
+            curl -fsSL --max-time 120 --max-filesize 104857600 -o in/video.mp4 "$VIDEO_URL"; SRC=in/video.mp4;;
+          esac
+          echo "SRC=$SRC" >> "$GITHUB_ENV"
+      - name: Render (self-hosted, pinned + sha256 weights)
+        run: bash avatar/selfhost/run.sh "$ENGINE" "$SRC" in/audio.wav raw.mp4
+      - name: Label + upload
+        id: up
+        run: |
+          ffmpeg -v error -y -i raw.mp4 -vf "drawtext=text='Generado con IA':fontcolor=white:fontsize=h/22:box=1:boxcolor=black@0.5:boxborderw=8:x=w-tw-16:y=h-th-16" -c:v libx264 -pix_fmt yuv420p -c:a aac out.mp4
+          RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload -F upload_preset=ml_unsigned -F folder=ml/avatar -F file=@out.mp4)
+          URL=$(echo "$RESP" | jq -r '.secure_url // empty'); [ -n "$URL" ] || { echo "Upload failed"; exit 1; }
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Callback (allowlisted URLs only)
+        if: ${{ always() && (github.event.client_payload.callback_url || inputs.callback_url) != '' }}
+        env:
+          CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
+          JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
+          OUT_URL: ${{ steps.up.outputs.url }}
+        run: |
+          case "$CB_URL" in https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;; *) echo "Callback URL not allowlisted"; exit 0;; esac
+          FB=""; [ -n "$OUT_URL" ] || FB="$ENGINE: self-hosted render failed (see run log)"
+          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" --arg engine "$ENGINE" --arg fb "$FB" --arg com "$COMMERCIAL" \
+            '{job:$job,url:$url,engine:$engine,commercial:($com=="true"),fallback_reason:$fb}' | \
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
