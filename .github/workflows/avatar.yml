@@ -11,6 +11,7 @@ on:
       quality: { description: "normal | alta", required: false, default: "normal" }
       engine: { description: "sadtalker | wav2lip | liveportrait | echomimic | latentsync", required: false, default: "sadtalker" }
       base_engine: { description: "liveportrait only: audio-driven driver, wav2lip | sadtalker", required: false, default: "wav2lip" }
+      commercial: { description: "true = only engines licensed for commercial use (see avatar/LICENSES.md)", required: false, default: "true" }
       codeformer: { description: "true = CodeFormer face restore (edits the face; off by default)", required: false, default: "false" }
       video_url: { description: "latentsync only: https Cloudinary yiq9yzmu .mp4", required: false }
 permissions:
@@ -27,6 +28,7 @@ jobs:
       CODEFORMER_COMMIT: b33cc7d639d6545bfcccc7e0bc6ae51f24e79c2b
       LIVEPORTRAIT_COMMIT: 9b294b3d0536135442ea73cb01e6cb3ca7029dd3
       BASE_ENGINE: ${{ github.event.client_payload.base_engine || inputs.base_engine || 'wav2lip' }}
+      COMMERCIAL: ${{ github.event.client_payload.commercial || inputs.commercial || 'true' }}
       CODEFORMER: ${{ github.event.client_payload.codeformer || inputs.codeformer || 'false' }}
       AUDIO_URL: ${{ github.event.client_payload.audio_url || inputs.audio_url }}
       PHOTO_ID: ${{ github.event.client_payload.photo_id || inputs.photo_id }}
@@ -54,6 +56,19 @@ jobs:
           case "$ENGINE" in sadtalker|wav2lip|liveportrait|echomimic|latentsync) ;; *) echo "Invalid engine"; exit 1;; esac
           case "$BASE_ENGINE" in sadtalker|wav2lip) ;; *) echo "Invalid base_engine"; exit 1;; esac
           case "$CODEFORMER" in true|false) ;; *) echo "codeformer must be true|false"; exit 1;; esac
+          case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
+          if [ "$COMMERCIAL" = true ]; then
+            case "$ENGINE" in wav2lip|liveportrait|echomimic)
+              echo "::warning title=license::$ENGINE weights are not licensed for commercial use; using sadtalker (see avatar/LICENSES.md)"
+              echo "### commercial=true: $ENGINE refused (license) -> sadtalker" >> "$GITHUB_STEP_SUMMARY"
+              echo "LICENSE_FALLBACK=$ENGINE refused (non-commercial license) -> sadtalker" >> "$GITHUB_ENV"
+              echo "ENGINE=sadtalker" >> "$GITHUB_ENV";;
+            esac
+            if [ "$CODEFORMER" = true ]; then
+              echo "::warning title=license::CodeFormer is S-Lab non-commercial; skipped"
+              echo "CODEFORMER=false" >> "$GITHUB_ENV"
+            fi
+          fi
           if [ "$ENGINE" = latentsync ]; then
             case "$VIDEO_URL" in https://res.cloudinary.com/yiq9yzmu/*.mp4) ;; *) echo "video_url must be our Cloudinary .mp4"; exit 1;; esac
             curl -fsSL --max-time 120 --max-filesize 104857600 -o in/src_video.mp4 "$VIDEO_URL"
@@ -169,13 +184,13 @@ jobs:
           CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
           JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
           OUT_URL: ${{ steps.up.outputs.url }}
-          FALLBACK: ${{ steps.hf.outputs.fallback_reason || steps.w2lfail.outputs.fallback_reason || steps.lpfail.outputs.fallback_reason }}
+          FALLBACK: ${{ env.LICENSE_FALLBACK || steps.hf.outputs.fallback_reason || steps.w2lfail.outputs.fallback_reason || steps.lpfail.outputs.fallback_reason }}
           CF_FAILED: ${{ steps.cf.outcome == 'failure' }}
         run: |
           case "$CB_URL" in
             https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
             *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
           esac
-          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" --arg engine "$ENGINE" --arg fb "$FALLBACK" --arg cf "$CF_FAILED" \
-            '{job:$job,url:$url,engine_requested:$engine,fallback_reason:$fb,codeformer_failed:($cf=="true")}' | \
+          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" --arg engine "$ENGINE" --arg fb "$FALLBACK" --arg cf "$CF_FAILED" --arg com "$COMMERCIAL" \
+            '{job:$job,url:$url,engine:$engine,commercial:($com=="true"),fallback_reason:$fb,codeformer_failed:($cf=="true")}' | \
             curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-

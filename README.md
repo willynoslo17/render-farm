@@ -28,7 +28,8 @@ Body (Make PRINCIPAL HTTP module, same headers as above):
 | echomimic | HF Space fffiloni/echomimic-v2 | photo + audio | Space is on CPU, often times out -> SadTalker |
 | latentsync | HF Space fffiloni/LatentSync (ZeroGPU) | `video_url` (our Cloudinary .mp4) + audio | |
 
+`"commercial"` (default `"true"`): only commercially-licensed engines run (sadtalker, latentsync); wav2lip/liveportrait/echomimic fall back to sadtalker and codeformer is skipped. See avatar/LICENSES.md.
 Optional `"codeformer":"true"`: CodeFormer face restoration (CPU, slow). It modifies the face, so it is OFF by default.
-Callback JSON: `{job,url,engine_requested,fallback_reason,codeformer_failed}`. `fallback_reason` is non-empty when the requested engine failed/timed out (also shown as a warning + run summary).
+Callback JSON: `{job,url,engine,commercial,fallback_reason,codeformer_failed}`. `fallback_reason` is non-empty when the requested engine failed/timed out (also shown as a warning + run summary).
 All code is pinned to commits; all model weights are pinned to immutable revisions and verified with sha256 (`avatar/weights.lock`, `avatar/fetch_weights.sh`).
 MuseTalk: not installed — official Space is in RUNTIME_ERROR and self-hosting needs mmcv/mmpose + GPU (not feasible on free CPU).
