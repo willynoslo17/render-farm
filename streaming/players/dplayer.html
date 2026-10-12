@@ -1,0 +1,7 @@
+<!-- DPlayer 1.27.1 (MIT) + hls.js 1.5.20 (Apache-2.0), pinned with SRI -->
+<div id="dplayer"></div>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.20/dist/hls.min.js" integrity="sha384-V5ruNBgmYcC3SJRUQeNykAAAgde5gOFq/Hu0CZj7bygDP0yRIhkvX8+w0u/7mRvr" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js" integrity="sha384-wQxdcYKsNUXYYfO6jvN8MG64BFabGdWcybNgEWn0ugSyIBM4TPS3C+OarTV5sIqf" crossorigin="anonymous"></script>
+<script>
+  new DPlayer({ container: document.getElementById('dplayer'), video: { url: 'https://YOUR-DOMAIN/app/stream/llhls.m3u8', type: 'hls' } });
+</script>
