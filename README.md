@@ -36,3 +36,8 @@ Callback JSON: `{job,url,engine,commercial,fallback_reason,codeformer_failed}`. 
 All code is pinned to commits; all model weights are pinned to immutable revisions and verified with sha256 (`avatar/weights.lock`, `avatar/fetch_weights.sh`).
 MuseTalk: not installed — official Space is in RUNTIME_ERROR and self-hosting needs mmcv/mmpose + GPU (not feasible on free CPU).
 Not installed (see avatar/LICENSES.md): LiveAvatar, SoulX-FlashTalk, EchoMimicV3-Flash, KeySync — commercial-OK but need a GPU (14B / 24GB+) and no working official Space (KeySync Space RUNTIME_ERROR); Hallo/Hallo2 (InsightFace non-commercial, Space paused), Sonic (CC BY-NC-SA), V-Express (non-commercial weights) — no free route and not sellable; daVinci-MagiHuman — code repo has no license and its Space is text-prompt only (no audio input); Sync 1.9 — paid sync.so API; MegaPortraits — no official code.
+
+## Voice (Japanese TTS) — `event_type: "voice"`
+{"event_type":"voice","client_payload":{"text":"こんにちは","voice":"zundamon","job_id":"126","callback_url":"https://hook.eu1.make.com/..."}}
+VOICEVOX engine 0.25.2 (Docker, pinned digest, CPU). Voices: zundamon, metan only (no cloning). Commercial OK **only with credit** in the video description (`credit_required` in callback). Output .wav on Cloudinary ml/voice.
+Not installed: MEMO (research-only, needs GPU, Space RUNTIME_ERROR), FaceFormer + Perceptual 3D Talking Head (VOCASET non-commercial + gated templates), DIRFA (no public code), COEIROINK (closed freeware), "Talking Face Generation with Multilingual TTS" (no weights), SEA-LION (LLM, not an avatar/voice engine).

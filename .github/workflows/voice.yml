@@ -1,0 +1,59 @@
+name: voice-tts
+# Optional Japanese TTS (VOICEVOX). Preset voices only, no voice cloning. See avatar/LICENSES.md.
+on:
+  repository_dispatch:
+    types: [voice]
+  workflow_dispatch:
+    inputs:
+      text: { description: "Japanese text (max 500 chars)", required: true }
+      voice: { description: "zundamon | metan", required: false, default: "zundamon" }
+      job_id: { description: "Job id", required: false }
+      callback_url: { description: "Allowlisted callback URL", required: false }
+permissions:
+  contents: read
+jobs:
+  tts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      voicevox:
+        # voicevox/voicevox_engine:cpu-ubuntu22.04-0.25.2, pinned by digest (engine LGPL-3.0, used unmodified over HTTP)
+        image: voicevox/voicevox_engine@sha256:148b7ade1e698893d8722b6bbd92c059f8796b4ab45449cf45e0601369e63455
+        ports: ["50021:50021"]
+    env:
+      TEXT: ${{ github.event.client_payload.text || inputs.text }}
+      VOICE: ${{ github.event.client_payload.voice || inputs.voice || 'zundamon' }}
+    steps:
+      - name: Validate + synthesize
+        run: |
+          set -euo pipefail
+          case "$VOICE" in zundamon) SPK=3; CREDIT="VOICEVOX:ずんだもん";; metan) SPK=2; CREDIT="VOICEVOX:四国めたん";; *) echo "voice not allowlisted"; exit 1;; esac
+          [ -n "$TEXT" ] && [ "$(printf %s "$TEXT" | wc -m)" -le 500 ] || { echo "text empty or > 500 chars"; exit 1; }
+          echo "CREDIT=$CREDIT" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do curl -fs http://localhost:50021/version && break; sleep 2; done
+          curl -fsS -X POST -G "http://localhost:50021/audio_query" --data-urlencode "text=$TEXT" --data-urlencode "speaker=$SPK" -o q.json
+          curl -fsS -X POST "http://localhost:50021/synthesis?speaker=$SPK" -H 'Content-Type: application/json' -d @q.json -o out.wav
+          file out.wav | grep -q WAVE
+      - name: Upload to Cloudinary (unsigned)
+        id: up
+        run: |
+          RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F folder=ml/voice -F file=@out.wav)
+          URL=$(echo "$RESP" | jq -r '.secure_url // empty')
+          if [ -z "$URL" ]; then echo "Upload failed: $(echo "$RESP" | jq -c '.error // .')"; exit 1; fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"; echo "secure_url=$URL"
+          echo "### Credit required in video description: $CREDIT" >> "$GITHUB_STEP_SUMMARY"
+      - name: Callback (allowlisted URLs only)
+        if: ${{ (github.event.client_payload.callback_url || inputs.callback_url) != '' }}
+        env:
+          CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
+          JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
+          OUT_URL: ${{ steps.up.outputs.url }}
+        run: |
+          case "$CB_URL" in
+            https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
+            *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
+          esac
+          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" --arg v "$VOICE" --arg c "$CREDIT" \
+            '{job:$job,url:$url,voice:$v,engine:"voicevox",commercial:true,credit_required:$c}' | \
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-

@@ -26,5 +26,11 @@ Not legal advice. "Commercial" = may the generated videos be monetized.
 | KeySync (Imperial College + Wrocław) — not installed | Apache-2.0 (antonibigata/keysync @5e2503b) | HF toninio19/keysync: Apache-2.0 | Yes | https://github.com/antonibigata/keysync |
 | Sync 1.9 (sync.so) — not installed | proprietary, paid API | n/a | n/a (not free) | https://sync.so/pricing |
 | MegaPortraits (Samsung) — not installed | no official code/weights released (only unofficial re-implementations) | n/a | n/a | https://arxiv.org/abs/2207.07621 |
+| MEMO (Skywork/NTU/NUS) — not installed | Apache-2.0 @151b024 | HF memoavatar/memo @9df2487 Apache-2.0, but README: "preview model for research purposes" | **No** (research-only) | https://github.com/memoavatar/memo |
+| FaceFormer (MPI) — not installed | MIT @dfaea81 | vocaset.pth/biwi.pth trained on VOCASET/BIWI (non-commercial research licenses); demo needs VOCASET templates.pkl (registration-gated) | **No** | https://github.com/EvelynFan/FaceFormer |
+| Perceptual 3D Talking Head (KAIST, CVPR'25) — not installed | MIT @2bf9d3b | perceptual-loss + eval checkpoints only (Google Drive), built on FaceFormer/VOCASET | **No** (VOCASET) | https://github.com/kaist-ami/Perceptual-3D-Talking-Head |
+| DIRFA (NTU) — not installed | no official public code/weights found | n/a | n/a | — |
+| **VOICEVOX engine 0.25.2** (voice, `voice.yml`) | LGPL-3.0 (dual; used unmodified via Docker digest sha256:148b7ad…) ; core MIT | Character voices ずんだもん/四国めたん: commercial OK **with credit** "VOICEVOX:ずんだもん" / "VOICEVOX:四国めたん"; banned: political/religious, fake/misleading, info-products, adult business | **Yes, with credit** | https://github.com/VOICEVOX/voicevox_engine · https://zunko.jp/con_ongen_kiyaku.html |
+| COEIROINK — not installed | proprietary freeware (closed source, no pinned Linux build) | per-character terms | n/a | https://coeiroink.com |
 
 `commercial` (default `true`) in avatar.yml: allowed = sadtalker, latentsync, longcat, aniportrait; wav2lip / liveportrait / echomimic are refused and replaced by sadtalker; codeformer is skipped. Set `"commercial":"false"` only for private/non-monetized tests.
