@@ -1,0 +1,95 @@
+name: avatar-render
+on:
+  repository_dispatch:
+    types: [avatar]
+  workflow_dispatch:
+    inputs:
+      audio_url: { description: "https URL of .wav/.mp3", required: true }
+      photo_id: { description: "ID from avatar/allowed_photos.json", required: true }
+      job_id: { description: "Job id", required: false }
+      callback_url: { description: "Allowlisted callback URL", required: false }
+      quality: { description: "normal | alta", required: false, default: "normal" }
+permissions:
+  contents: read
+concurrency:
+  group: avatar-${{ github.run_id }}
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      SADTALKER_COMMIT: cd4c0465ae0b54a6f85af57f5c65fec9fe23e7f8
+      AUDIO_URL: ${{ github.event.client_payload.audio_url || inputs.audio_url }}
+      PHOTO_ID: ${{ github.event.client_payload.photo_id || inputs.photo_id }}
+      QUALITY: ${{ github.event.client_payload.quality || inputs.quality || 'normal' }}
+      AVATAR_SPACE: ${{ vars.AVATAR_SPACE }}
+      AVATAR_SPACE_API: ${{ vars.AVATAR_SPACE_API }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate inputs (photo allowlist + audio)
+        run: |
+          set -euo pipefail
+          case "$PHOTO_ID" in ""|*[!A-Za-z0-9_-]*) echo "Invalid photo_id"; exit 1;; esac
+          PHOTO_URL=$(jq -r --arg id "$PHOTO_ID" '.photos[$id] // empty' avatar/allowed_photos.json)
+          if [ -z "$PHOTO_URL" ]; then echo "photo_id not in approved allowlist; refusing."; exit 1; fi
+          case "$PHOTO_URL" in https://res.cloudinary.com/yiq9yzmu/*) ;; *) echo "Allowlisted URL not on our Cloudinary; refusing."; exit 1;; esac
+          case "$AUDIO_URL" in https://*) ;; *) echo "audio_url must be https"; exit 1;; esac
+          EXT=$(echo "${AUDIO_URL%%\?*}" | sed 's/.*\.//' | tr 'A-Z' 'a-z')
+          case "$EXT" in wav|mp3) ;; *) echo "audio must be .wav or .mp3"; exit 1;; esac
+          mkdir -p in
+          curl -fsSL --max-time 60 --max-filesize 26214400 -o in/photo.jpg "$PHOTO_URL"
+          curl -fsSL --max-time 60 --max-filesize 26214400 -o "in/audio.$EXT" "$AUDIO_URL"
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-dejavu-core
+          ffmpeg -v error -y -i "in/audio.$EXT" -ac 1 -ar 16000 -t 120 in/audio.wav
+          file in/photo.jpg | grep -Eq 'JPEG|PNG|WebP' || { echo "Photo is not an image"; exit 1; }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.10" }
+      - name: Optional HF Space route (quality=alta)
+        id: hf
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ "$QUALITY" != "alta" ] || [ -z "$AVATAR_SPACE" ]; then
+            echo "HF route skipped."; exit 0
+          fi
+          pip install -q "gradio_client>=1.3"
+          timeout 900 python avatar/hf_space.py in/photo.jpg in/audio.wav raw.mp4 && echo "done=true" >> "$GITHUB_OUTPUT"
+      - name: SadTalker (CPU)
+        if: ${{ steps.hf.outputs.done != 'true' }}
+        run: |
+          set -euo pipefail
+          git clone -q https://github.com/OpenTalker/SadTalker.git st
+          git -C st checkout -q "$SADTALKER_COMMIT"
+          cd st
+          pip install -q torch==1.12.1+cpu torchvision==0.13.1+cpu torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cpu
+          pip install -q -r requirements.txt
+          bash scripts/download_models.sh
+          python inference.py --driven_audio ../in/audio.wav --source_image ../in/photo.jpg \
+            --result_dir ../st_out --still --preprocess full --size 256 --cpu
+          cp "$(find ../st_out -name '*.mp4' | head -1)" ../raw.mp4
+      - name: Add "Generado con IA" label
+        run: |
+          ffmpeg -v error -y -i raw.mp4 -vf "drawtext=fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf:text='Generado con IA':fontcolor=white:fontsize=h/22:box=1:boxcolor=black@0.5:boxborderw=8:x=w-tw-16:y=h-th-16" \
+            -c:v libx264 -pix_fmt yuv420p -c:a aac out.mp4
+      - name: Upload to Cloudinary (unsigned)
+        id: up
+        run: |
+          RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F folder=ml/avatar -F file=@out.mp4)
+          URL=$(echo "$RESP" | jq -r '.secure_url // empty')
+          if [ -z "$URL" ]; then echo "Upload failed: $(echo "$RESP" | jq -c '.error // .')"; exit 1; fi
+          echo "url=$URL" >> "$GITHUB_OUTPUT"; echo "secure_url=$URL"
+      - name: Callback (allowlisted URLs only)
+        if: ${{ (github.event.client_payload.callback_url || inputs.callback_url) != '' }}
+        env:
+          CB_URL: ${{ github.event.client_payload.callback_url || inputs.callback_url }}
+          JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
+          OUT_URL: ${{ steps.up.outputs.url }}
+        run: |
+          case "$CB_URL" in
+            https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;;
+            *) echo "Callback URL not in allowlist; skipping."; exit 0 ;;
+          esac
+          jq -n --arg job "$JOB_ID" --arg url "$OUT_URL" '{job:$job,url:$url}' | \
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
