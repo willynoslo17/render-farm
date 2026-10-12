@@ -1,0 +1,40 @@
+name: blender-render
+on:
+  repository_dispatch:
+    types: [blender]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      BLENDER_VERSION: "4.2.3"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Blender (headless)
+        run: |
+          sudo apt-get update && sudo apt-get install -y libxi6 libxxf86vm1 libxrender1 libgl1 libxkbcommon0 libsm6
+          wget -q https://download.blender.org/release/Blender4.2/blender-${BLENDER_VERSION}-linux-x64.tar.xz
+          tar xf blender-*.tar.xz && mv blender-${BLENDER_VERSION}-linux-x64 blender
+      - name: Render (Cycles CPU / EEVEE)
+        env:
+          SCENE: ${{ github.event.client_payload.scene || 'blender/scene.blend' }}
+          START: ${{ github.event.client_payload.start || 1 }}
+          END: ${{ github.event.client_payload.end || 120 }}
+        run: |
+          mkdir -p out
+          ./blender/blender -b "$SCENE" -P blender/render.py -s $START -e $END -o //../out/frame_#### -F PNG -a
+          ffmpeg -y -framerate 30 -i out/frame_%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+      - name: Upload to Cloudinary (unsigned)
+        id: up
+        run: |
+          URL=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F file=@out.mp4 | jq -r .secure_url)
+          echo "url=$URL" >> $GITHUB_OUTPUT; echo "$URL"
+      - name: Callback
+        if: ${{ github.event.client_payload.callback_url != '' }}
+        run: |
+          curl -s -X POST "${{ github.event.client_payload.callback_url }}" -H 'Content-Type: application/json' \
+            -d '{"job":"${{ github.event.client_payload.job_id }}","url":"${{ steps.up.outputs.url }}"}'

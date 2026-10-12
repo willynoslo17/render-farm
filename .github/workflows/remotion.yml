@@ -1,0 +1,37 @@
+name: remotion-render
+on:
+  repository_dispatch:
+    types: [remotion]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Install
+        working-directory: remotion
+        run: npm ci || npm install
+      - name: Render
+        working-directory: remotion
+        env:
+          PROPS: ${{ toJson(github.event.client_payload.props) }}
+          COMP: ${{ github.event.client_payload.composition || 'Main' }}
+        run: |
+          echo "$PROPS" > props.json
+          npx remotion render src/index.ts "$COMP" out.mp4 --props=props.json
+      - name: Upload to Cloudinary (unsigned)
+        id: up
+        run: |
+          URL=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/video/upload \
+            -F upload_preset=ml_unsigned -F file=@remotion/out.mp4 | jq -r .secure_url)
+          echo "url=$URL" >> $GITHUB_OUTPUT; echo "$URL"
+      - name: Callback
+        if: ${{ github.event.client_payload.callback_url != '' }}
+        run: |
+          curl -s -X POST "${{ github.event.client_payload.callback_url }}" -H 'Content-Type: application/json' \
+            -d '{"job":"${{ github.event.client_payload.job_id }}","url":"${{ steps.up.outputs.url }}"}'
