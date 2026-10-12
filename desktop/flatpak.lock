@@ -1,0 +1,3 @@
+# Linux apps without an official Linux binary asset: Flathub, pinned to the exact OSTree commit
+io.github.OpenToonz 0920c8058c12df034cc2e670fe5b88e3392368f9b8e74f2b9230c6f1b884877c
+com.github.PintaProject.Pinta a105c6c88f33ed7daf1cb2d28c75673bbfa8752e3a3ea3d44b587bee01a3ac72
