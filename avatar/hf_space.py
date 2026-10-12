@@ -18,7 +18,7 @@ ALLOWED = {
 DEFAULT = {"echomimic": "fffiloni/echomimic-v2", "latentsync": "fffiloni/LatentSync",
            "longcat": "meituan-longcat/LongCat-Video-Avatar-1.5-Demo", "aniportrait": "ZJYang/AniPortrait_official"}
 # Space revisions reviewed (Spaces run live code; a change is reported, see avatar/LICENSES.md)
-REVIEWED = {"fffiloni/echomimic-v2": "a48c1cc904d6dc84aaa0a7d3f160528ad04bf0c3",
+SPACE_REV = {"fffiloni/echomimic-v2": "a48c1cc904d6dc84aaa0a7d3f160528ad04bf0c3",
             "fffiloni/LatentSync": "058d1fbd5e450d527510907a4094b8826cc206a5",
             "meituan-longcat/LongCat-Video-Avatar-1.5-Demo": "472c881f0cb05b4991eee71bb3b86e93600bb7c1",
             "ZJYang/AniPortrait_official": "8dc5037a0c34aea6c5530b912318de96febefab6"}
@@ -39,13 +39,6 @@ if space in SPACE_REV:
     except Exception:
         pass
 try:
-    import json, urllib.request
-    live = json.load(urllib.request.urlopen(f"https://huggingface.co/api/spaces/{space}", timeout=20)).get("sha")
-    if live != REVIEWED.get(space):
-        print(f"::warning title=HF Space changed::{space} is at {live}, reviewed {REVIEWED.get(space)}")
-except Exception as e:
-    print(f"::warning::could not verify Space revision: {e}")
-try:
     client = Client(space, token=tok, verbose=False)
 except TypeError:
     client = Client(space, hf_token=tok, verbose=False)
@@ -54,16 +47,11 @@ if mode == "echomimic":
                          768, 768, int(os.environ.get("EM_FRAMES", "150")), 20, 16000, 2.5, 24, 12, 3, False, -1,
                          api_name="/generate")
 elif mode == "longcat":
-    res = client.predict(handle_file(src), handle_file(audio), "A person is talking naturally to the camera.",
-                         "480p", 42, "Clean speech (fast)", "DBCache fast", api_name="/generate_avatar")
-elif mode == "aniportrait":
-    res = client.predict(handle_file(audio), handle_file(src), None, 384, 15, int(os.environ.get("AP_FRAMES", "150")), 42, api_name="/audio2video")
-elif mode == "longcat":
     res = client.predict(handle_file(src), handle_file(audio), "A person is talking naturally.",
                          os.environ.get("LC_RES", "480p"), 42, "Clean speech (fast)", "DBCache faster",
                          api_name="/generate_avatar")
 elif mode == "aniportrait":
-    res = client.predict(handle_file(audio), handle_file(src), None, 512, 25,
+    res = client.predict(handle_file(audio), handle_file(src), None, 512, 20,
                          int(os.environ.get("AP_FRAMES", "150")), 42, api_name="/audio2video")
 else:
     res = client.predict(handle_file(src), handle_file(audio), api_name="/generate_lip_sync_video")
