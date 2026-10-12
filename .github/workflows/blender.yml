@@ -24,9 +24,11 @@ jobs:
         env:
           SCENE: ${{ github.event.client_payload.scene }}
           START: ${{ github.event.client_payload.start || 1 }}
-          END: ${{ github.event.client_payload.end || 60 }}
+          END: ${{ github.event.client_payload.end || 48 }}
+          SCALE: ${{ github.event.client_payload.scale || '1080x1920' }}
         run: |
           set -e
+          case "$SCALE" in none|[0-9]*x[0-9]*) ;; *) echo "scale must be WxH or none"; exit 1;; esac
           case "$START$END" in *[!0-9]*) echo "start/end must be integers"; exit 1;; esac
           if [ -z "$SCENE" ] || [ ! -f "$SCENE" ]; then
             echo "No scene file given; generating default scene."
@@ -35,7 +37,7 @@ jobs:
           fi
           mkdir -p out
           ./blender-bin/blender -b "$SCENE" -P blender/render.py -s "$START" -e "$END" -o "$GITHUB_WORKSPACE/out/frame_####" -F PNG -a
-          ffmpeg -y -framerate 30 -start_number "$START" -i out/frame_%04d.png -c:v libx264 -pix_fmt yuv420p out.mp4
+          ffmpeg -y -framerate 30 -start_number "$START" -i out/frame_%04d.png $( [ "$SCALE" != none ] && echo "-vf scale=${SCALE/x/:}:flags=lanczos" ) -c:v libx264 -pix_fmt yuv420p out.mp4
       - name: Upload to Cloudinary (unsigned)
         id: up
         run: |
