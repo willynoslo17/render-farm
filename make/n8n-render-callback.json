@@ -1,0 +1,16 @@
+{
+  "name": "ML - Render-farm callback -> PRINCIPAL",
+  "nodes": [
+    {"parameters": {"httpMethod": "POST", "path": "render-done", "responseMode": "onReceived", "options": {}},
+     "id": "wh", "name": "Render callback", "type": "n8n-nodes-base.webhook", "typeVersion": 2, "position": [0, 300]},
+    {"parameters": {"jsCode": "const b = $input.first().json.body || {};\nconst ok = u => typeof u === 'string' && u.startsWith('https://res.cloudinary.com/yiq9yzmu/');\nconst urls = Array.isArray(b.urls) ? b.urls.filter(ok) : [];\nconst url = ok(b.url) ? b.url : '';\nconst s = v => (v === undefined || v === null) ? '' : String(v).slice(0, 500);\nreturn [{ json: { source: 'render_result', job: s(b.job), task: s(b.task), engine: s(b.engine), voice: s(b.voice), url, urls, ok: !!(url || urls.length), commercial: b.commercial === true, fallback_reason: s(b.fallback_reason), credit_required: s(b.credit_required) } }];"},
+     "id": "clean", "name": "Validar (solo Cloudinary)", "type": "n8n-nodes-base.code", "typeVersion": 2, "position": [240, 300]},
+    {"parameters": {"method": "POST", "url": "https://hook.eu1.make.com/REPLACE_PRINCIPAL_WEBHOOK", "sendBody": true, "specifyBody": "json", "jsonBody": "={{ JSON.stringify($json) }}", "options": {"timeout": 30000}},
+     "id": "principal", "name": "-> PRINCIPAL", "type": "n8n-nodes-base.httpRequest", "typeVersion": 4.2, "position": [480, 300]}
+  ],
+  "connections": {
+    "Render callback": {"main": [[{"node": "Validar (solo Cloudinary)", "type": "main", "index": 0}]]},
+    "Validar (solo Cloudinary)": {"main": [[{"node": "-> PRINCIPAL", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"}
+}

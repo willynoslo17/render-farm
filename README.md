@@ -48,3 +48,16 @@ Code pinned, weights sha256-locked (`avatar/weights.lock`), runner script `avata
 Sent to the normal `avatar` workflow, these engines fall back to longcat (keysync+commercial -> sadtalker) with `fallback_reason` "needs a GPU".
 Warning: self-hosted runners on a public repo must be ephemeral/isolated; never register one on a machine with secrets.
 Not installed: Duix-Avatar (model license non-commercial without written authorization; needs NVIDIA GPU).
+
+## PRINCIPAL router (everything goes through Make PRINCIPAL)
+Send to the PRINCIPAL webhook (route **R41**), PRINCIPAL dispatches to this repo (`event_type` = `tool`):
+```json
+{"source":"render","tool":"avatar|avatar-gpu|voice|media",
+ "payload":{ ...client_payload of that workflow..., "job_id":"123",
+             "callback_url":"https://ml-n8n.denmarkeast.cloudapp.azure.com/webhook/render-done"}}
+```
+Examples of `payload`: avatar `{"engine":"longcat","photo_id":"willy_camisa","audio_url":"https://res.cloudinary.com/yiq9yzmu/...wav"}` ·
+voice `{"text":"こんにちは","voice":"zundamon"}` · media `{"job":"upscale","inputs":["https://res.cloudinary.com/yiq9yzmu/....jpg"]}` ·
+avatar-gpu `{"engine":"musetalk","photo_id":"...","audio_url":"...","video_url":"..."}`.
+Results: workflow -> n8n `render-done` (`make/n8n-render-callback.json`, keeps only Cloudinary URLs) -> PRINCIPAL with `source=render_result` (route **R42**, sheet "Render results").
+GitHub PAT for R41: fine-grained, this repo only, Contents read/write; stored in a Make keychain `GITHUB_RENDER_PAT` (header `Authorization: Bearer …`), never in payloads.
