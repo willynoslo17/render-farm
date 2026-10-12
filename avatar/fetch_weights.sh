@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Usage: [WEIGHTS_EXCLUDE=<regex>] fetch_weights.sh <prefix> <root>  — downloads weights.lock entries whose dest starts with <prefix>, verifies sha256, aborts on mismatch.
 set -euo pipefail
-prefix=$1; root=$2; exclude=${WEIGHTS_EXCLUDE:-};  lock="$(dirname "$0")/weights.lock"
+prefix=$1; root=$2; exclude=${WEIGHTS_EXCLUDE:-};  lock="${WEIGHTS_LOCK:-$(dirname "$0")/weights.lock}"
 grep -v '^#' "$lock" | while read -r dest sha url; do
   case "$dest" in "$prefix"/*) ;; *) continue;; esac
   if [ -n "$exclude" ] && [[ "$dest" =~ $exclude ]]; then echo "excluded $dest"; continue; fi

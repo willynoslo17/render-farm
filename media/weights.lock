@@ -1,0 +1,5 @@
+# dest  sha256  url  (media-tools.yml; fetched by avatar/fetch_weights.sh-compatible format)
+media/rife.zip 1e2c7ee7fa7daa326542d50622f0afedc80cf6f1858bda411d16385ffa5cdf68 https://github.com/nihui/rife-ncnn-vulkan/releases/download/20221029/rife-ncnn-vulkan-20221029-ubuntu.zip
+media/realesrgan.zip e5aa6eb131234b87c0c51f82b89390f5e3e642b7b70f2b9bbe95b6a285a40c96 https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesrgan-ncnn-vulkan-20220424-ubuntu.zip
+media/u2net.onnx 8d10d2f3bb75ae3b6d527c77944fc5e7dcd94b29809d47a739a7a728a912b491 https://github.com/danielgatis/rembg/releases/download/v0.0.0/u2net.onnx
+media/isnet-general-use.onnx 60920e99c45464f2ba57bee2ad08c919a52bbf852739e96947fbb4358c0d964a https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx

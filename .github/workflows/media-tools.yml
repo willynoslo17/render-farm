@@ -1,0 +1,134 @@
+name: media-tools
+# Headless media jobs. Dispatch: event_type "media". See media/README.md and MEDIA-LICENSES.md.
+on:
+  repository_dispatch:
+    types: [media]
+permissions:
+  contents: read
+concurrency:
+  group: media-${{ github.run_id }}
+jobs:
+  run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      JOB: ${{ github.event.client_payload.job }}
+      INPUTS_JSON: ${{ toJSON(github.event.client_payload.inputs) }}
+      OUT_FMT: ${{ github.event.client_payload.format || '' }}
+      SCALE: ${{ github.event.client_payload.scale || '4' }}
+      SIZE: ${{ github.event.client_payload.size || '1080' }}
+      MODEL: ${{ github.event.client_payload.model || 'u2net' }}
+      COMMERCIAL: ${{ github.event.client_payload.commercial || 'true' }}
+      MARP_VER: "4.5.1"
+      SLIDEV_VER: "53.0.0"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate + download inputs (Cloudinary https only)
+        run: |
+          set -euo pipefail
+          case "$JOB" in raw2jpg|panorama|office2pdf|marp|slidev|mux|upscale|interpolate|bg_remove|resize) ;; *) echo "Invalid job"; exit 1;; esac
+          case "$COMMERCIAL" in true|false) ;; *) echo "commercial must be true|false"; exit 1;; esac
+          case "$SCALE" in 2|3|4) ;; *) echo "scale must be 2|3|4"; exit 1;; esac
+          case "$SIZE" in *[!0-9]*|"") echo "size must be digits"; exit 1;; esac; [ "$SIZE" -le 8000 ]
+          case "$MODEL" in u2net|isnet) ;; *) echo "model must be u2net|isnet"; exit 1;; esac
+          case "$OUT_FMT" in ""|pdf|pptx|jpg|png|webp|mkv|mp4) ;; *) echo "invalid format"; exit 1;; esac
+          if [ "$COMMERCIAL" = true ] && [ "$MODEL" = isnet ]; then
+            echo "::warning title=license::IS-Net weights trained on DIS5K (non-commercial terms); using u2net"
+            echo "MODEL=u2net" >> "$GITHUB_ENV"; echo "LICENSE_FALLBACK=isnet refused (DIS5K non-commercial) -> u2net" >> "$GITHUB_ENV"
+          fi
+          N=$(echo "$INPUTS_JSON" | jq 'if type=="array" then length else -1 end'); [ "$N" -ge 1 ] && [ "$N" -le 30 ] || { echo "inputs must be an array of 1-30 URLs"; exit 1; }
+          mkdir -p in out; i=0
+          echo "$INPUTS_JSON" | jq -r '.[]' | while IFS= read -r U; do
+            [[ "$U" =~ ^https://res\.cloudinary\.com/yiq9yzmu/[A-Za-z0-9/_.,-]+\.([A-Za-z0-9]{2,5})$ ]] || { echo "Input not an allowed Cloudinary URL"; exit 1; }
+            EXT=$(echo "${BASH_REMATCH[1]}" | tr 'A-Z' 'a-z')
+            case "$EXT" in jpg|jpeg|png|webp|tif|tiff|dng|cr2|cr3|nef|arw|raf|orf|rw2|mp4|mov|mkv|webm|wav|mp3|m4a|aac|srt|md|pptx|odp|ppt|docx|odt|css) ;; *) echo "extension not allowed"; exit 1;; esac
+            i=$((i+1)); curl -fsSL --proto '=https' --max-time 180 --max-filesize 524288000 -o "in/$(printf %03d $i).$EXT" "$U"
+          done
+          ls -la in
+      - name: Install pinned tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          case "$JOB" in
+            raw2jpg) sudo apt-get install -y -qq darktable ;;
+            panorama) sudo apt-get install -y -qq hugin-tools enblend ;;
+            office2pdf) sudo apt-get install -y -qq libreoffice-impress libreoffice-writer fonts-dejavu-core ;;
+            mux) sudo apt-get install -y -qq mkvtoolnix ffmpeg ;;
+            upscale|interpolate) sudo apt-get install -y -qq mesa-vulkan-drivers libvulkan1 ffmpeg unzip libgomp1 ;;
+            resize) sudo apt-get install -y -qq imagemagick webp ;;
+            bg_remove) pip install -q "rembg[cpu,cli]==2.0.85" ;;
+            marp|slidev) sudo apt-get install -y -qq fonts-dejavu-core ;;
+          esac
+          dpkg -l darktable hugin-tools libreoffice-impress mkvtoolnix imagemagick 2>/dev/null | awk '/^ii/{print $2, $3}' || true
+          case "$JOB" in
+            upscale) WEIGHTS_EXCLUDE='^media/(rife|u2net|isnet)' bash avatar/fetch_weights.sh media w ;;
+            interpolate) WEIGHTS_EXCLUDE='^media/(realesrgan|u2net|isnet)' bash avatar/fetch_weights.sh media w ;;
+            bg_remove) WEIGHTS_EXCLUDE='^media/(rife|realesrgan)' bash avatar/fetch_weights.sh media w; mkdir -p ~/.u2net; cp w/*.onnx ~/.u2net/ ;;
+          esac
+        env:
+          WEIGHTS_LOCK: media/weights.lock
+      - name: Run job
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          case "$JOB" in
+            raw2jpg)
+              for f in in/*; do darktable-cli "$f" "out/$(basename "${f%.*}").jpg" --core --conf plugins/imageio/format/jpeg/quality=92; done ;;
+            panorama)
+              pto_gen -o p.pto in/*; cpfind --multirow -o p.pto p.pto; cpclean -o p.pto p.pto; linefind -o p.pto p.pto
+              autooptimiser -a -m -l -s -o p.pto p.pto; pano_modify --canvas=AUTO --crop=AUTO -o p.pto p.pto
+              hugin_executor --stitching --prefix=out/panorama p.pto ;;
+            office2pdf)
+              F=${OUT_FMT:-pdf}; soffice --headless --convert-to "$F" --outdir out in/* ;;
+            marp)
+              F=${OUT_FMT:-pdf}; for f in in/*.md; do npx -y "@marp-team/marp-cli@$MARP_VER" --no-stdin --html=false "--$F" --allow-local-files -o "out/$(basename "${f%.*}").$F" "$f"; done ;;
+            slidev)
+              F=${OUT_FMT:-pdf}; cd in; npm i -q --no-save "@slidev/cli@$SLIDEV_VER" @slidev/theme-default playwright-chromium
+              npx playwright install chromium; for f in *.md; do npx slidev export "$f" --format "$F" --output "../out/${f%.*}.$F"; done ;;
+            mux)
+              V=$(ls in/*.{mp4,mov,mkv,webm} 2>/dev/null | head -1); A=(in/*.{wav,mp3,m4a,aac}); S=(in/*.srt)
+              F=${OUT_FMT:-mkv}; mkvmerge -o out/muxed.mkv "$V" "${A[@]}" "${S[@]}"
+              [ "$F" = mp4 ] && ffmpeg -v error -y -i out/muxed.mkv -map 0 -c copy -c:s mov_text out/muxed.mp4 && rm out/muxed.mkv || true ;;
+            upscale)  # Real-ESRGAN (product photos only; GFPGAN face enhancement intentionally NOT available)
+              mkdir -p w/re && unzip -qo w/realesrgan.zip -d w/re && chmod +x w/re/realesrgan-ncnn-vulkan
+              for f in in/*; do
+                O="out/$(basename "${f%.*}")_x$SCALE.png"; w/re/realesrgan-ncnn-vulkan -i "$f" -o x4.png -n realesrgan-x4plus -s 4 -m w/re/models
+                if [ "$SCALE" = 4 ]; then mv x4.png "$O"; else ffmpeg -v error -y -i x4.png -vf "scale=iw*$SCALE/4:-1:flags=lanczos" "$O"; rm x4.png; fi
+              done ;;
+            interpolate)  # RIFE 2x frame interpolation (CPU via lavapipe; slow)
+              unzip -qo w/rife.zip -d w; R=w/rife-ncnn-vulkan-20221029-ubuntu; chmod +x $R/rife-ncnn-vulkan
+              V=$(ls in/*.{mp4,mov,mkv,webm} | head -1); mkdir -p fi fo
+              FPS=$(ffprobe -v error -select_streams v:0 -show_entries stream=r_frame_rate -of csv=p=0 "$V")
+              ffmpeg -v error -i "$V" -t 60 fi/%08d.png
+              $R/rife-ncnn-vulkan -i fi -o fo -m $R/rife-v4.6
+              FPS2=$(echo "$FPS" | awk -F/ '{d=($2==""?1:$2); printf "%.3f", ($1/d)*2}')
+              ffmpeg -v error -y -framerate "$FPS2" -i fo/%08d.png -i "$V" -map 0:v -map 1:a? -shortest -c:v libx264 -pix_fmt yuv420p out/interpolated.mp4 ;;
+            bg_remove)
+              M=$MODEL; [ "$M" = isnet ] && M=isnet-general-use
+              for f in in/*; do rembg i -m "$M" "$f" "out/$(basename "${f%.*}")_nobg.png"; done ;;
+            resize)
+              F=${OUT_FMT:-jpg}; for f in in/*; do magick "$f" -auto-orient -strip -resize "${SIZE}x${SIZE}>" -quality 85 "out/$(basename "${f%.*}").$F"; done ;;
+          esac
+          ls -la out; [ -n "$(ls out)" ] || { echo "no output produced"; exit 1; }
+      - name: Upload to Cloudinary (unsigned)
+        id: up
+        run: |
+          set -euo pipefail
+          URLS='[]'
+          for f in out/*; do
+            RESP=$(curl -s -X POST https://api.cloudinary.com/v1_1/yiq9yzmu/auto/upload -F upload_preset=ml_unsigned -F folder=ml/media -F file=@"$f")
+            U=$(echo "$RESP" | jq -r '.secure_url // empty'); [ -n "$U" ] || { echo "Upload failed: $(echo "$RESP" | jq -c '.error // .')"; exit 1; }
+            URLS=$(echo "$URLS" | jq -c --arg u "$U" '. + [$u]')
+          done
+          echo "urls=$URLS" >> "$GITHUB_OUTPUT"; echo "$URLS"
+      - name: Callback (allowlisted URLs only)
+        if: ${{ always() && github.event.client_payload.callback_url != '' }}
+        env:
+          CB_URL: ${{ github.event.client_payload.callback_url }}
+          JOB_ID: ${{ github.event.client_payload.job_id }}
+          URLS: ${{ steps.up.outputs.urls }}
+        run: |
+          case "$CB_URL" in https://ml-n8n.denmarkeast.cloudapp.azure.com/*|https://hook.eu1.make.com/*) ;; *) echo "Callback URL not allowlisted"; exit 0;; esac
+          jq -n --arg job "$JOB_ID" --arg t "$JOB" --argjson urls "${URLS:-[]}" --arg fb "${LICENSE_FALLBACK:-}" --arg com "$COMMERCIAL" \
+            '{job:$job,task:$t,urls:$urls,ok:($urls|length>0),commercial:($com=="true"),fallback_reason:$fb}' | \
+            curl -s --max-time 30 -X POST "$CB_URL" -H 'Content-Type: application/json' -d @-
