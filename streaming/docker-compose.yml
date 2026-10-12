@@ -1,0 +1,28 @@
+# Streaming servers for the Azure VM. NOT for public exposure until hardened (see streaming/README.md).
+# Images pinned by digest. OvenMediaEngine is AGPL-3.0: run UNMODIFIED (if you modify it and serve users over a network you must publish your changes).
+services:
+  ovenmediaengine:
+    image: airensoft/ovenmediaengine@sha256:172da9129d32093f3c92c426d385a318db38c7e70de0a3a685693e69614672a6  # v0.21.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:1935:1935"        # RTMP ingest (bind localhost; expose only via firewall rule for your encoder IP)
+      - "127.0.0.1:3333:3333"        # WebRTC/LLHLS signalling+HTTP (put behind TLS reverse proxy)
+      - "10000-10004:10000-10004/udp" # WebRTC ICE
+    environment:
+      OME_HOST_IP: "${OME_HOST_IP:?set public IP}"
+    read_only: false
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: ["ALL"]
+    cap_add: ["NET_BIND_SERVICE"]
+    mem_limit: 2g
+  zlmediakit:
+    image: zlmediakit/zlmediakit@sha256:ddc5127d4fab7be622b34148ac8869ca6310298acd33440f1236e771a3c5ceee  # master @2026-10-12 (no release tags published)
+    restart: unless-stopped
+    profiles: ["zlm"]                # alternative to OME; start with: docker compose --profile zlm up -d
+    ports:
+      - "127.0.0.1:1936:1935"
+      - "127.0.0.1:8080:80"
+    volumes:
+      - ./zlm-config.ini:/opt/media/conf/config.ini:ro
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 2g
